@@ -3,6 +3,11 @@ from flask import Flask, render_template, request
 app = Flask(__name__)
 
 
+@app.after_request
+def header(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
 @app.route('/')
 def index():
     return render_template('login.html')
