@@ -10,6 +10,7 @@ mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
 
+
 @app.after_request
 def header(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -20,17 +21,18 @@ def header(response):
 def index():
     return render_template('login.html')
 
-
 @app.route('/login', methods=['POST'])
 def login():
     return 'Login'
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        password_confirm = request.form['password_confirm']
+        email = request.form['email']
+        password_confirm = request.form['confirm-password']
 
         if password != password_confirm:
             return 'Two Entered Passwords not the same', 400
@@ -46,10 +48,11 @@ def register():
 
         hashed_pwd = bcrypt.hashpw(password.encode(), salt)
 
-        user_collection.insert_one({'username': username, 'password': hashed_pwd, 'salt': salt})
+        user_collection.insert_one({'username': username, 'password': hashed_pwd, 'email': email})
 
         return render_template('login.html')
-
+    else:
+        return render_template('register.html')
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
