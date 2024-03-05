@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, make_response
 from pymongo import MongoClient
 import bcrypt
 
 import misc
+import secrets
+import hashlib
 
 app = Flask(__name__)
 
@@ -32,7 +34,13 @@ def login():
 
         if user:
             if bcrypt.checkpw(password.encode(), user['password']):
-                return render_template('homepage.html'), 200
+                userToken = secrets.token_hex(15)
+                hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
+                user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken}})
+                loginResponse = make_response(render_template('homepage.html'), 200)
+                loginResponse.set_cookie("user_token", userToken)
+
+                return loginResponse
             else:
                 return "Invalid password", 401
         else:
