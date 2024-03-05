@@ -21,9 +21,22 @@ def header(response):
 def index():
     return render_template('login.html')
 
-@app.route('/login', methods=['POST'])
+
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    return 'Login'
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = user_collection.find_one({'username': username})
+
+        if user:
+            if bcrypt.checkpw(password.encode(), user['password']):
+                return render_template('homepage.html'), 200
+            else:
+                return "Invalid password", 401
+        else:
+            return "Username does not exist", 404
 
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -53,6 +66,7 @@ def register():
         return render_template('login.html')
     else:
         return render_template('register.html')
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
