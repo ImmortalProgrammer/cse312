@@ -42,7 +42,7 @@ def login():
                 userToken = secrets.token_hex(15)
                 hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
                 user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken}})
-                loginResponse = make_response(render_template('forum.html'), 200)
+                loginResponse = make_response(render_template('forum.html'), 302)
                 loginResponse.set_cookie("user_token", userToken, httponly=True)
 
                 return loginResponse
@@ -50,7 +50,9 @@ def login():
                 return "Invalid password", 401
         else:
             return "Username does not exist", 404
-
+    if request.method == 'GET':
+        return render_template('login.html')
+        
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -79,6 +81,16 @@ def register():
         return render_template('login.html')
     else:
         return render_template('register.html')
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()}, {"$unset": {"authentication_token": ""}})
+        response = make_response(render_template('login.html'), 302)
+        response.set_cookie('user_token', '', expires=0, httponly=True)
+        return response
 
 
 if __name__ == "__main__":
