@@ -21,6 +21,11 @@ def header(response):
 
 @app.route('/')
 def index():
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
+        if user:
+            return render_template('forum.html')
     return render_template('login.html')
 
 
