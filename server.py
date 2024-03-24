@@ -43,7 +43,7 @@ def login():
                 hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
                 user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken}})
                 loginResponse = make_response(render_template('forum.html'), 200)
-                loginResponse.set_cookie("user_token", userToken)
+                loginResponse.set_cookie("user_token", userToken, httponly=True)
 
                 return loginResponse
             else:
