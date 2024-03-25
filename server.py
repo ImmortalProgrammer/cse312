@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, make_response
+from flask import Flask, render_template, request, make_response, redirect, url_for
 from pymongo import MongoClient
 import bcrypt
 
@@ -11,6 +11,7 @@ app = Flask(__name__)
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
+post_collection = db['posts']
 
 
 @app.after_request
@@ -31,6 +32,10 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        return redirect(url_for('index'))
+
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -56,6 +61,10 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        return redirect(url_for('index'))
+
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
