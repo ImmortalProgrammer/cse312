@@ -37,7 +37,7 @@ def login():
                 userToken = secrets.token_hex(15)
                 hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
                 user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken}})
-                loginResponse = make_response(render_template('homepage.html'), 200)
+                loginResponse = make_response(render_template('forum.html'), 200)
                 loginResponse.set_cookie("user_token", userToken)
 
                 return loginResponse
@@ -75,6 +75,11 @@ def register():
     else:
         return render_template('register.html')
 
+
+@app.route('/forum', methods=['POST'])
+def handle_post_request():
+    data = request.json
+    return jsonify({"message": "Success"})
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
