@@ -187,11 +187,15 @@
                   <li><a class="dropdown-item" href="#">My Profile</a></li>
                   <li><a class="dropdown-item" href="#">Settings</a></li>
                   <li><hr class="dropdown-divider"></li>
-                  <li><a class="dropdown-item" href="#">Log Out</a></li>
+                 <li>
+                   <form action="/logout" method="post" enctype="application/x-www-form-urlencoded">
+                     <input type="submit" class="dropdown-item" value="Log Out">
+                   </form>
                 </ul>
               </li>
             </ul>
             <form id="postForm" class="d-flex" role="search">
+                <input type="hidden" name="xsrf" value="{{ xsrf }}">
               <input class="form-control me-2" type="text" name="title" placeholder="Title" aria-label="Title">
               <input class="form-control me-2" type="text" name="description" placeholder="Description" aria-label="Description">
               <button id="postButton" class="btn btn-outline-success" type="submit">Post</button>
@@ -206,6 +210,7 @@
             event.preventDefault();
 
             const formData = new FormData(this);
+            const xsrfToken = document.querySelector('input[name="xsrf"]').value;
             const title = formData.get("title");
             const description = formData.get("description");
 
@@ -215,7 +220,7 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ title, description })
+                    body: JSON.stringify({ title, description, xsrfToken })
                 });
 
                 if (!response.ok) {

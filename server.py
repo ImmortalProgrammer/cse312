@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, make_response, redirect, url_for
+from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify
 from pymongo import MongoClient
 import bcrypt
 
@@ -12,6 +12,7 @@ mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
 post_collection = db['posts']
+chat_id = db['count']
 
 
 @app.after_request
@@ -26,7 +27,8 @@ def index():
     if user_token:
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
         if user:
-            return render_template('forum.html')
+            xsrf_token = user['xsrf_token']
+            return render_template('forum.html', xsrf=xsrf_token), 302
     return render_template('login.html')
 
 
@@ -46,10 +48,10 @@ def login():
             if bcrypt.checkpw(password.encode(), user['password']):
                 userToken = secrets.token_hex(15)
                 hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
-                user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken}})
-                loginResponse = make_response(render_template('homepage.html'), 200)
-                loginResponse.set_cookie("user_token", userToken)
-
+                xsrf_token = secrets.token_urlsafe(15)
+                user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
+                loginResponse = make_response(render_template('forum.html', xsrf=xsrf_token), 302)
+                loginResponse.set_cookie("user_token", userToken, httponly=True)
                 return loginResponse
             else:
                 return "Invalid password", 401
@@ -57,7 +59,7 @@ def login():
             return "Username does not exist", 404
     if request.method == 'GET':
         return render_template('login.html')
-        
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -96,16 +98,50 @@ def register():
 def logout():
     user_token = request.cookies.get('user_token')
     if user_token:
-        user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()}, {"$unset": {"authentication_token": ""}})
+        user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()},
+                                   {"$unset": {"authentication_token": "", "xsrf_token": ""}})
         response = make_response(render_template('login.html'), 302)
         response.set_cookie('user_token', '', expires=0, httponly=True)
         return response
 
 
-@app.route('/forum', methods=['POST','GET'])
+@app.route('/forum', methods=['POST', 'GET'])
 def handle_post_request():
-    data = request.json
-    return jsonify({"message": "Success"})
+    if request.method == "GET":
+        chat = list(post_collection.find({}, {'_id': 0}))
+        response = make_response(jsonify(chat))
+        return response
+    if request.method == "POST":
+        data = request.json
+        xsrf_token = data["xsrfToken"]
+        title = data["title"]
+        description = data['description']
+        if chat_id.count_documents({}) == 0:
+            chat_id.insert_one({'id': 0})
+        idplusone = list(chat_id.find({}, {'_id': 0}))
+        idplusone.reverse()
+        idplusone[0]["id"] = idplusone[0]["id"] + 1
+        chat_id.insert_one({'id': idplusone[0]['id']})
+        usernameFound = ""
+        if 'user_token' in request.cookies:
+            userToken = request.cookies['user_token'].encode('utf-8')
+            hashedToken = hashlib.sha256(userToken).hexdigest()
+            user = user_collection.find_one({"authentication_token": hashedToken})
+            if user:
+                if user['xsrf_token'] == xsrf_token:
+                    username = user['username']
+                else:
+                    return "Forbidden", 403
+            else:
+                return "Forbidden", 403
+            post_collection.insert_one({
+                'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+                'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+                'username': username,
+                'id': str(idplusone[0]['id'])
+            })
+        return jsonify({"message": "Success"}), 201
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
