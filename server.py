@@ -76,7 +76,7 @@ def register():
         return render_template('register.html')
 
 
-@app.route('/forum', methods=['POST'])
+@app.route('/forum', methods=['POST','GET'])
 def handle_post_request():
     data = request.json
     return jsonify({"message": "Success"})
