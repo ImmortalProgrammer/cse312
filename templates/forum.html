@@ -73,11 +73,11 @@
     </nav>
 
     <div class="title-description">
-        <form id="postForm" class="d-flex flex-column" role="search">
+        <form id="postForm" class="d-flex flex-column" role="search" enctype="multipart/form-data">
             <input type="hidden" name="xsrf" value="{{ xsrf }}">
             <input class="form-control title-input" type="text" name="title" placeholder="Title" aria-label="Title">
             <input class="form-control description-input" type="text" name="description" placeholder="Description" aria-label="Description">
-            <input type="file" name="image" accept="image/*"> <!-- Add file input for image upload -->
+            <input type="file" name="image" accept="image/* "> <!-- Add file input for image upload -->
             <button id="postButton" class="btn btn-outline-success mt-2 align-self-start" type="submit">Post</button>
         </form>
     </div>
