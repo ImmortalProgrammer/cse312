@@ -36,52 +36,63 @@
 <body>
     <nav class="navbar navbar-expand-lg bg-body-tertiary">
         <div class="container-fluid">
-          <a class="navbar-brand" href="#">CHAT-FORUM</a>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-          </button>
-          <div class="collapse navbar-collapse" id="navbarSupportedContent">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-              <li class="nav-item">
-                <a class="nav-link active" aria-current="page" href="#">Home</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="#">My Posts</a>
-              </li>
-              <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                  Dropdown
-                </a>
-                <ul class="dropdown-menu">
-                  <li><a class="dropdown-item" href="#">My Profile</a></li>
-                  <li><a class="dropdown-item" href="#">Settings</a></li>
-                  <li><hr class="dropdown-divider"></li>
-                 <li>
-                   <form action="/logout" method="post" enctype="application/x-www-form-urlencoded">
-                     <input type="submit" class="dropdown-item" value="Log Out">
-                   </form>
+            <a class="navbar-brand" href="#">CHAT-FORUM</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="#">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">My Posts</a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Dropdown
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#">My Profile</a></li>
+                            <li><a class="dropdown-item" href="#">Settings</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form action="/logout" method="post" enctype="application/x-www-form-urlencoded">
+                                    <input type="submit" class="dropdown-item" value="Log Out">
+                                </form>
+                            </li>
+                        </ul>
+                    </li>
                 </ul>
-              </li>
-            </ul>
-            <form id="postForm" class="d-flex" role="search">
-                <input type="hidden" name="xsrf" value="{{ xsrf }}">
-              <input class="form-control me-2" type="text" name="title" placeholder="Title" aria-label="Title">
-              <input class="form-control me-2" type="text" name="description" placeholder="Description" aria-label="Description">
-              <button id="postButton" class="btn btn-outline-success" type="submit">Post</button>
-            </form>
-          </div>
+                <div class="d-flex">
+                    <img src="https://bootdey.com/img/Content/avatar/avatar1.png" alt="Avatar" class="rounded-circle me-2" style="width: 32px; height: 32px;">
+                    <span class="align-self-center text-black">{{username}}</span>
+                </div>
+            </div>
         </div>
     </nav>
+
+    <div class="title-description">
+        <form id="postForm" class="d-flex flex-column" role="search">
+            <input type="hidden" name="xsrf" value="{{ xsrf }}">
+            <input class="form-control title-input" type="text" name="title" placeholder="Title" aria-label="Title">
+            <input class="form-control description-input" type="text" name="description" placeholder="Description" aria-label="Description">
+            <input type="file" name="image" accept="image/*"> <!-- Add file input for image upload -->
+            <button id="postButton" class="btn btn-outline-success mt-2 align-self-start" type="submit">Post</button>
+        </form>
+    </div>
+
     <div id="forumContainer" class="container"></div>
 
-<script>
-    document.getElementById("postForm").addEventListener("submit", async function(event) {
-        event.preventDefault();
+    <script>
+        document.getElementById("postForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
 
             const formData = new FormData(this);
             const xsrfToken = document.querySelector('input[name="xsrf"]').value;
             const title = formData.get("title");
             const description = formData.get("description");
+            const image = formData.get("image"); // Retrieve uploaded image
 
             try {
                 const response = await fetch("http://localhost:8080/forum", {
@@ -89,12 +100,12 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ title, description, xsrfToken })
+                    body: JSON.stringify({ title, description, image, xsrfToken }) // Include image in the request
                 });
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
 
                 const data = await response.json();
                 console.log(data);
@@ -106,12 +117,14 @@
                         <div class="media forum-item">
                             <a href="#" data-toggle="collapse" data-target=".forum-content">
                                 <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" />
+                                <p class="text-muted">@${{username}}</p>
                             </a>
                             <div class="media-body">
                                 <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${title}</a></h6>
                                 <p class="text-secondary">${description}</p>
                             </div>
                         </div>
+
                     </div>
                 `;
                 forumContainer.appendChild(newForumBox);
@@ -122,41 +135,41 @@
         });
     </script>
     <script>
-function updateForum() {
-    fetch('http://localhost:8080/forum')
-        .then(response => response.json())
-        .then(data => {
-            console.log(data);
-            const forumContainer = document.getElementById("forumContainer");
-            forumContainer.innerHTML = "";
+        function updateForum() {
+            fetch('http://localhost:8080/forum')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    const forumContainer = document.getElementById("forumContainer");
+                    forumContainer.innerHTML = "";
 
-            data.forEach(post => {
-                const newForumBox = document.createElement("div");
-                newForumBox.classList.add("card", "mb-2");
-                newForumBox.innerHTML = `
-                    <div class="card-body p-2 p-sm-3">
-                        <div class="media forum-item">
-                            <a href="#" data-toggle="collapse" data-target=".forum-content">
-                                <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" />
-                            </a>
-                            <div class="media-body">
-                                <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${post.title}</a></h6>
-                                <p class="text-secondary">${post.description}</p>
+                    data.forEach(post => {
+                        const newForumBox = document.createElement("div");
+                        newForumBox.classList.add("card", "mb-2");
+                        newForumBox.innerHTML = `
+                            <div class="card-body p-2 p-sm-3">
+                                <div class="media forum-item">
+                                    <a href="#" data-toggle="collapse" data-target=".forum-content">
+                                        <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" /> 
+                                        <p class="text-muted">@${post.username}</p>
+                                    </a>
+                                    <div class="media-body">
+                                        <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${post.title}</a></h6>
+                                        <p class="text-secondary">${post.description}</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                `;
-                forumContainer.appendChild(newForumBox);
-            });
-        })
-        .catch(error => {
-            console.error('Forum Data Error', error);
-        });
-}
-updateForum();
-setInterval(updateForum, 5000);
-  </script>
-  </script>
+                        `;
+                        forumContainer.appendChild(newForumBox);
+                    });
+                })
+                .catch(error => {
+                    console.error('Forum Data Error', error);
+                });
+        }
+        updateForum();
+        setInterval(updateForum, 5000);
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
 </body>
