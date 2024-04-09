@@ -31,6 +31,10 @@
         .description-input {
             height: 5em;
         }
+
+        .like-count {
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -114,17 +118,19 @@
                 newForumBox.classList.add("card", "mb-2");
                 newForumBox.innerHTML = `
                     <div class="card-body p-2 p-sm-3">
-                        <div class="media forum-item">
+                        <div class="media forum-item" data-post-id="${data.id}"> <!-- Add data-post-id attribute -->
                             <a href="#" data-toggle="collapse" data-target=".forum-content">
                                 <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" />
-                                <p class="text-muted">@${{username}}</p>
+                                <p class="text-muted">@{{username}}</p>
                             </a>
                             <div class="media-body">
                                 <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${title}</a></h6>
                                 <p class="text-secondary">${description}</p>
+                                <span class="like-icon">&hearts;</span> <!-- Add heart icon for liking -->
+                                <span class="like-count">0</span> <!-- Initialize like count to 0 -->
+                                <button class="btn btn-primary like-btn">Like</button> <!-- Add like button -->
                             </div>
                         </div>
-
                     </div>
                 `;
                 forumContainer.appendChild(newForumBox);
@@ -133,8 +139,34 @@
                 console.error("Error:", error);
             }
         });
-    </script>
-    <script>
+
+        // Function to handle like button click
+        document.getElementById("forumContainer").addEventListener("click", async function(event) {
+            if (event.target.classList.contains("like-btn")) {
+                const forumItem = event.target.closest(".forum-item");
+                const likeCountElement = forumItem.querySelector(".like-count");
+                const postId = forumItem.dataset.postId;
+
+                try {
+                    const response = await fetch(`http://localhost:8080/forum/${postId}/like`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1; // Update like count
+                } catch (error) {
+                    console.error("Error:", error);
+                }
+            }
+        });
+
         function updateForum() {
             fetch('http://localhost:8080/forum')
                 .then(response => response.json())
@@ -148,7 +180,7 @@
                         newForumBox.classList.add("card", "mb-2");
                         newForumBox.innerHTML = `
                             <div class="card-body p-2 p-sm-3">
-                                <div class="media forum-item">
+                                <div class="media forum-item" data-post-id="${post.id}"> <!-- Add data-post-id attribute -->
                                     <a href="#" data-toggle="collapse" data-target=".forum-content">
                                         <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" /> 
                                         <p class="text-muted">@${post.username}</p>
@@ -156,6 +188,9 @@
                                     <div class="media-body">
                                         <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${post.title}</a></h6>
                                         <p class="text-secondary">${post.description}</p>
+                                        <span class="like-icon">&hearts;</span> <!-- Add heart icon for liking -->
+                                        <span class="like-count">${post.likes}</span> <!-- Display like count -->
+                                        <button class="btn btn-primary like-btn">Like</button> <!-- Add like button -->
                                     </div>
                                 </div>
                             </div>

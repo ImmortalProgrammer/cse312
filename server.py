@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify
 from pymongo import MongoClient
 import bcrypt
-
 import misc
 import secrets
 import hashlib
@@ -138,9 +137,33 @@ def handle_post_request():
                 'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
                 'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
                 'username': username,
-                'id': str(idplusone[0]['id'])
+                'id': str(idplusone[0]['id']),
+                'likes': 0  # Initialize like count to 0
             })
         return jsonify({"message": "Success"}), 201
+
+
+@app.route('/forum/<post_id>/like', methods=['POST'])
+def like_post(post_id):
+    post = post_collection.find_one({'id': post_id})
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+
+    user_token = request.cookies.get('user_token')
+    if not user_token:
+        return jsonify({"error": "User not authenticated"}), 401
+
+    user_token_hash = hashlib.sha256(user_token.encode()).hexdigest()
+    user = user_collection.find_one({"authentication_token": user_token_hash})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    liked_by = post.get("liked_by", [])
+    if user["username"] in liked_by:
+        return jsonify({"error": "You have already liked this post"}), 400
+
+    post_collection.update_one({'id': post_id}, {'$inc': {'likes': 1}, '$push': {'liked_by': user["username"]}})
+    return jsonify({"message": "Like count updated successfully"}), 200
 
 
 if __name__ == "__main__":
