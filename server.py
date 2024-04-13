@@ -2,7 +2,7 @@ import os
 import uuid
 
 import flask
-from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify
+from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
 from werkzeug.utils import secure_filename
@@ -31,8 +31,7 @@ def header(response):
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    return flask.send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 @app.route('/')
@@ -124,8 +123,10 @@ def logout():
 def handle_post_request():
     if request.method == "GET":
         chat = list(post_collection.find({}, {'_id': 0}))
-        response = make_response(jsonify(chat))
-        return response
+        for post in chat:
+            if post.get('image_path'):
+                post['image_path'] = url_for('uploaded_file', filename=post['image_path'][len('/app/uploads/'):])
+        return jsonify(chat)
     if request.method == "POST":
         xsrf_token = request.form.get("xsrf")
         title = request.form.get("title")
