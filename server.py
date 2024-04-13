@@ -1,6 +1,7 @@
 import os
 import uuid
 
+import flask
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify
 from pymongo import MongoClient
 import bcrypt
@@ -26,6 +27,12 @@ chat_id = db['count']
 def header(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     return response
+
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return flask.send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 
 
 @app.route('/')
