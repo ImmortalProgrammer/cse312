@@ -117,14 +117,17 @@
                         <div class="media forum-item" data-post-id="${data.id}">
                             <a href="#" data-toggle="collapse" data-target=".forum-content">
                                 <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" />
-                                <p class="text-muted">@{{username}}</p>
+                                <p class="text-muted">@${data.username}</p>
                             </a>
                             <div class="media-body">
                                 <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${title}</a></h6>
                                 <p class="text-secondary">${description}</p>
-                                ${data.image_path ? `<img src="${data.image_path}" alt="Image" style="max-width: 100%;">` : ''} <!-- Display image if available -->
+                                ${data.image_path ? `<img src="${data.image_path}" alt="Image" style="width: 250px;">` : ''}
+                            </div>
+                            <br>
+                            <div class="likes-section"> <!-- Likes section -->
                                 <span class="like-icon">&hearts;</span> <!-- Add heart icon for liking -->
-                                <span class="like-count">0</span> <!-- Initialize like count to 0 -->
+                                <span class="like-count">${data.likes}</span> <!-- Display like count -->
                                 <button class="btn btn-primary like-btn">Like</button> <!-- Add like button -->
                             </div>
                         </div>
@@ -186,7 +189,10 @@
                                     <div class="media-body">
                                         <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${post.title}</a></h6>
                                         <p class="text-secondary">${post.description}</p>
-                                        ${post.image_path ? `<img src="${post.image_path}" alt="Image" style="max-width: 100%;">` : ''}
+                                        ${post.image_path ? `<img src="${post.image_path}" alt="Image" style="width: 250px;">` : ''}
+                                    </div>
+                                    <br>
+                                    <div class="likes-section"> <!-- Likes section -->
                                         <span class="like-icon">&hearts;</span> <!-- Add heart icon for liking -->
                                         <span class="like-count">${post.likes}</span> <!-- Display like count -->
                                         <button class="btn btn-primary like-btn">Like</button> <!-- Add like button -->
