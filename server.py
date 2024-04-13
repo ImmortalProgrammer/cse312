@@ -12,7 +12,7 @@ import hashlib
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
-app.config['UPLOAD_FOLDER'] = "uploads"
+app.config['UPLOAD_FOLDER'] = "/app/uploads"
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
@@ -133,8 +133,6 @@ def handle_post_request():
             image_file.save(image_path)
         else:
             image_path = None
-
-        print(image_path)
 
 
         if chat_id.count_documents({}) == 0:
