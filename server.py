@@ -1,17 +1,25 @@
+import os
+import uuid
+
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify
 from pymongo import MongoClient
 import bcrypt
+from werkzeug.utils import secure_filename
+
 import misc
 import secrets
 import hashlib
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
+app.config['UPLOAD_FOLDER'] = "uploads"
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
+
 
 
 @app.after_request
@@ -48,7 +56,8 @@ def login():
                 userToken = secrets.token_hex(15)
                 hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
                 xsrf_token = secrets.token_urlsafe(15)
-                user_collection.update_one({"username": username}, {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
+                user_collection.update_one({"username": username},
+                                           {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
                 loginResponse = make_response(render_template('forum.html', xsrf=xsrf_token), 302)
                 loginResponse.set_cookie("user_token", userToken, httponly=True)
                 return loginResponse
@@ -111,10 +120,23 @@ def handle_post_request():
         response = make_response(jsonify(chat))
         return response
     if request.method == "POST":
-        data = request.json
-        xsrf_token = data["xsrfToken"]
-        title = data["title"]
-        description = data['description']
+        xsrf_token = request.form.get("xsrf")
+        title = request.form.get("title")
+        description = request.form.get("description")
+        image_file = request.files.get("image")
+
+        # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+        if image_file:
+            filename = secure_filename(image_file.filename)
+            filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            image_file.save(image_path)
+        else:
+            image_path = None
+
+        print(image_path)
+
+
         if chat_id.count_documents({}) == 0:
             chat_id.insert_one({'id': 0})
         idplusone = list(chat_id.find({}, {'_id': 0}))
@@ -138,7 +160,8 @@ def handle_post_request():
                 'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
                 'username': username,
                 'id': str(idplusone[0]['id']),
-                'likes': 0  # Initialize like count to 0
+                'likes': 0,
+                'image_path': image_path
             })
         return jsonify({"message": "Success"}), 201
 
@@ -167,4 +190,4 @@ def like_post(post_id):
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080, debug=True)

@@ -89,22 +89,18 @@
     <div id="forumContainer" class="container"></div>
 
     <script>
-        document.getElementById("postForm").addEventListener("submit", async function(event) {
+         document.getElementById("postForm").addEventListener("submit", async function(event) {
             event.preventDefault();
 
             const formData = new FormData(this);
             const xsrfToken = document.querySelector('input[name="xsrf"]').value;
             const title = formData.get("title");
             const description = formData.get("description");
-            const image = formData.get("image"); // Retrieve uploaded image
 
             try {
                 const response = await fetch("http://localhost:8080/forum", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ title, description, image, xsrfToken }) // Include image in the request
+                    body: formData
                 });
 
                 if (!response.ok) {
@@ -118,7 +114,7 @@
                 newForumBox.classList.add("card", "mb-2");
                 newForumBox.innerHTML = `
                     <div class="card-body p-2 p-sm-3">
-                        <div class="media forum-item" data-post-id="${data.id}"> <!-- Add data-post-id attribute -->
+                        <div class="media forum-item" data-post-id="${data.id}">
                             <a href="#" data-toggle="collapse" data-target=".forum-content">
                                 <img src="https://bootdey.com/img/Content/avatar/avatar1.png" class="mr-3 rounded-circle" width="50" alt="User" />
                                 <p class="text-muted">@{{username}}</p>
@@ -126,6 +122,7 @@
                             <div class="media-body">
                                 <h6><a href="#" data-toggle="collapse" data-target=".forum-content" class="text-body">${title}</a></h6>
                                 <p class="text-secondary">${description}</p>
+                                ${data.image_path ? `<img src="${data.image_path}" alt="Image" style="max-width: 100%;">` : ''} <!-- Display image if available -->
                                 <span class="like-icon">&hearts;</span> <!-- Add heart icon for liking -->
                                 <span class="like-count">0</span> <!-- Initialize like count to 0 -->
                                 <button class="btn btn-primary like-btn">Like</button> <!-- Add like button -->
@@ -139,6 +136,7 @@
                 console.error("Error:", error);
             }
         });
+
 
         // Function to handle like button click
         document.getElementById("forumContainer").addEventListener("click", async function(event) {
