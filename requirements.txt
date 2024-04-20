@@ -2,3 +2,5 @@ flask
 pymongo
 bcrypt
 jinja2
+Flask-SocketIO
+eventlet

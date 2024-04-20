@@ -11,16 +11,18 @@ import misc
 import secrets
 import hashlib
 
+from flask_socketio import SocketIO, emit
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
+socket = SocketIO(app)
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
-
 
 
 @app.after_request
@@ -161,14 +163,15 @@ def handle_post_request():
                     return "Forbidden", 403
             else:
                 return "Forbidden", 403
-            post_collection.insert_one({
+            myPost = {
                 'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
                 'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
                 'username': username,
                 'id': str(idplusone[0]['id']),
                 'likes': 0,
                 'image_path': image_path
-            })
+            }
+            post_collection.insert_one(myPost)
         return jsonify({"message": "Success"}), 201
 
 
@@ -196,4 +199,5 @@ def like_post(post_id):
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    # app.run(host='0.0.0.0', port=8080, debug=True)
+    socket.run(app, host='0.0.0.0', port=8080, debug=True)
