@@ -1,12 +1,11 @@
 import os
 import uuid
-
+import time
 import flask
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
 from werkzeug.utils import secure_filename
-
 import misc
 import secrets
 import hashlib
@@ -120,7 +119,6 @@ def logout():
         response.set_cookie('user_token', '', expires=0, httponly=True)
         return response
 
-
 @app.route('/forum', methods=['POST', 'GET'])
 def handle_post_request():
     if request.method == "GET":
@@ -172,9 +170,10 @@ def handle_post_request():
                 'image_path': image_path
             }
             post_collection.insert_one(myPost)
+
+            socket.emit('create_post_event')
+
         return jsonify({"message": "Success"}), 201
-
-
 @app.route('/forum/<post_id>/like', methods=['POST'])
 def like_post(post_id):
     post = post_collection.find_one({'id': post_id})
@@ -197,7 +196,20 @@ def like_post(post_id):
     post_collection.update_one({'id': post_id}, {'$inc': {'likes': 1}, '$push': {'liked_by': user["username"]}})
     return jsonify({"message": "Like count updated successfully"}), 200
 
+@socket.on('create_post_event')
+def handle_new_post(post_data):
+    emit('create_post', post_data, broadcast=True)
+
+@socket.on('forum_update_request')
+def handle_forum_update_request():
+    chat_history = list(post_collection.find({}, {'_id': 0}))
+    for post in chat_history:
+        if post.get("image_path"):
+            post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+
+    socket.emit("update_forum", chat_history)
+
+
 
 if __name__ == "__main__":
-    # app.run(host='0.0.0.0', port=8080, debug=True)
     socket.run(app, host='0.0.0.0', port=8080, debug=True)
