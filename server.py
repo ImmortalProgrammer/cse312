@@ -8,6 +8,7 @@ import bcrypt
 from werkzeug.utils import secure_filename
 import misc
 import secrets
+import imghdr
 import hashlib
 from io import BytesIO
 
@@ -138,10 +139,14 @@ def handle_post_request(data):
     description = data["description"]
     image_bytes = data["image"]
 
+    file_ext = imghdr.what(None, h=image_bytes)
+    if not file_ext:
+        file_ext = "jpg"
+
     # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
     if image_bytes:
         image_file = BytesIO(image_bytes)
-        image_file.filename = "image.jpg"
+        image_file.filename = "image."+ file_ext
         filename = secure_filename(image_file.filename)
         filename = str(uuid.uuid4()) + "-_-_-_-" + filename
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
