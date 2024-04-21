@@ -100,20 +100,16 @@
 
             const formData = new FormData(this);
 
-            try {
-                const response = await fetch("http://localhost:8080/forum", {
-                    method: "POST",
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`ERROR: ${response.status}`);
-                }
-
-                this.reset();
-            } catch (error) {
-                console.error("Error:", error);
+            // Convert FormData to JSON
+            let jsonObject = {};
+            for (const [key, value] of formData.entries()) {
+            jsonObject[key] = value;
             }
+
+            // Send form data over WebSocket
+            socket.emit('post_data', jsonObject);
+
+            this.reset();
         });
 
 

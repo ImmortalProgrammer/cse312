@@ -119,61 +119,53 @@ def logout():
         response.set_cookie('user_token', '', expires=0, httponly=True)
         return response
 
-@app.route('/forum', methods=['POST', 'GET'])
-def handle_post_request():
-    if request.method == "GET":
-        chat = list(post_collection.find({}, {'_id': 0}))
-        for post in chat:
-            if post.get('image_path'):
-                post['image_path'] = url_for('uploaded_file', filename=post['image_path'][len('/app/uploads/'):])
-        return jsonify(chat)
-    if request.method == "POST":
-        xsrf_token = request.form.get("xsrf")
-        title = request.form.get("title")
-        description = request.form.get("description")
-        image_file = request.files.get("image")
+@socket.on("post_data")
+def handle_post_request(data):
+    xsrf_token = data["xsrf"]
+    title = data["title"]
+    description = data["description"]
+    image_file = data["image"]
 
-        # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-        if image_file:
-            filename = secure_filename(image_file.filename)
-            filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            image_file.save(image_path)
-        else:
-            image_path = None
+    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+    if image_file:
+        filename = secure_filename(image_file.filename)
+        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image_file.save(image_path)
+    else:
+        image_path = None
 
 
-        if chat_id.count_documents({}) == 0:
-            chat_id.insert_one({'id': 0})
-        idplusone = list(chat_id.find({}, {'_id': 0}))
-        idplusone.reverse()
-        idplusone[0]["id"] = idplusone[0]["id"] + 1
-        chat_id.insert_one({'id': idplusone[0]['id']})
-        usernameFound = ""
-        if 'user_token' in request.cookies:
-            userToken = request.cookies['user_token'].encode('utf-8')
-            hashedToken = hashlib.sha256(userToken).hexdigest()
-            user = user_collection.find_one({"authentication_token": hashedToken})
-            if user:
-                if user['xsrf_token'] == xsrf_token:
-                    username = user['username']
-                else:
-                    return "Forbidden", 403
+    if chat_id.count_documents({}) == 0:
+        chat_id.insert_one({'id': 0})
+    idplusone = list(chat_id.find({}, {'_id': 0}))
+    idplusone.reverse()
+    idplusone[0]["id"] = idplusone[0]["id"] + 1
+    chat_id.insert_one({'id': idplusone[0]['id']})
+    usernameFound = ""
+    if 'user_token' in request.cookies:
+        userToken = request.cookies['user_token'].encode('utf-8')
+        hashedToken = hashlib.sha256(userToken).hexdigest()
+        user = user_collection.find_one({"authentication_token": hashedToken})
+        if user:
+            if user['xsrf_token'] == xsrf_token:
+                username = user['username']
             else:
                 return "Forbidden", 403
-            myPost = {
-                'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-                'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-                'username': username,
-                'id': str(idplusone[0]['id']),
-                'likes': 0,
-                'image_path': image_path
-            }
-            post_collection.insert_one(myPost)
+        else:
+            return "Forbidden", 403
+        myPost = {
+            'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+            'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+            'username': username,
+            'id': str(idplusone[0]['id']),
+            'likes': 0,
+            'image_path': image_path
+        }
+        post_collection.insert_one(myPost)
 
-            socket.emit('create_post_event')
+        socket.emit('create_post_event')
 
-        return jsonify({"message": "Success"}), 201
 @app.route('/forum/<post_id>/like', methods=['POST'])
 def like_post(post_id):
     post = post_collection.find_one({'id': post_id})
