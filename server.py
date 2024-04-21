@@ -43,7 +43,7 @@ def index():
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
         if user:
             xsrf_token = user['xsrf_token']
-            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username', 'Guest')), 302
+            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username')), 302
     return render_template('login.html')
 
 
@@ -66,21 +66,26 @@ def login():
                 xsrf_token = secrets.token_urlsafe(15)
                 user_collection.update_one({"username": username},
                                            {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
-                loginResponse = make_response(render_template('forum.html', xsrf=xsrf_token), 302)
+                forum_template = render_template('forum.html', xsrf=xsrf_token, username=user.get('username'))
+                loginResponse = make_response(forum_template)
                 loginResponse.set_cookie("user_token", userToken, httponly=True)
+                loginResponse.status_code = 302
+                loginResponse.headers['Location'] = url_for('index')
                 return loginResponse
             else:
                 return "Invalid password", 401
         else:
             return "Username does not exist", 404
     if request.method == 'GET':
-        return render_template('login.html')
+        response = make_response(render_template('login.html'))
+        response.status_code = 302
+        return response
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     user_token = request.cookies.get('user_token')
-    if user_token:
+    if user_token and user_token != '':
         return redirect(url_for('index'))
 
     if request.method == 'POST':
@@ -104,10 +109,14 @@ def register():
         hashed_pwd = bcrypt.hashpw(password.encode(), salt)
 
         user_collection.insert_one({'username': username, 'password': hashed_pwd, 'email': email})
-
-        return render_template('login.html')
-    else:
-        return render_template('register.html')
+        response = make_response(render_template('login.html'))
+        response.headers['Location'] = url_for('login')
+        response.status_code = 302
+        return response
+    if request.method == "GET":
+        response = make_response(render_template('register.html'))
+        response.status_code = 302
+        return response
 
 
 @app.route('/logout', methods=['POST'])
@@ -116,8 +125,10 @@ def logout():
     if user_token:
         user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()},
                                    {"$unset": {"authentication_token": "", "xsrf_token": ""}})
-        response = make_response(render_template('login.html'), 302)
+        response = make_response(render_template('login.html'))
         response.set_cookie('user_token', '', expires=0, httponly=True)
+        response.headers['Location'] = url_for('login')
+        response.status_code = 302
         return response
 
 @socket.on("post_data")
