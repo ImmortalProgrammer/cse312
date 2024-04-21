@@ -43,7 +43,7 @@ def index():
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
         if user:
             xsrf_token = user['xsrf_token']
-            return render_template('forum.html', xsrf=xsrf_token), 302
+            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username', 'Guest')), 302
     return render_template('login.html')
 
 
