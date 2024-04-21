@@ -211,10 +211,6 @@ def like_post(post_id):
     post_collection.update_one({'id': post_id}, {'$inc': {'likes': 1}, '$push': {'liked_by': user["username"]}})
     return jsonify({"message": "Like count updated successfully"}), 200
 
-@socket.on('create_post_event')
-def handle_new_post(post_data):
-    emit('create_post', post_data, broadcast=True)
-
 @socket.on('forum_update_request')
 def handle_forum_update_request():
     chat_history = list(post_collection.find({}, {'_id': 0}))
