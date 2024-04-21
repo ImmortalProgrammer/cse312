@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 import misc
 import secrets
 import hashlib
+from io import BytesIO
 
 from flask_socketio import SocketIO, emit
 
@@ -124,14 +125,17 @@ def handle_post_request(data):
     xsrf_token = data["xsrf"]
     title = data["title"]
     description = data["description"]
-    image_file = data["image"]
+    image_bytes = data["image"]
 
     # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_file:
+    if image_bytes:
+        image_file = BytesIO(image_bytes)
+        image_file.filename = "image.jpg"
         filename = secure_filename(image_file.filename)
         filename = str(uuid.uuid4()) + "-_-_-_-" + filename
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image_file.save(image_path)
+        with open(image_path, 'wb') as image:
+            image.write(image_bytes)
     else:
         image_path = None
 
