@@ -11,13 +11,16 @@ import secrets
 import imghdr
 import hashlib
 from io import BytesIO
-
+from flask_sslify import SSLify
 from flask_socketio import SocketIO, emit
+
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
 socket = SocketIO(app)
+# FORCE HTTPS
+sslify = SSLify(app)
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
@@ -224,4 +227,4 @@ def handle_forum_update_request():
 
 
 if __name__ == "__main__":
-    socket.run(app, host='0.0.0.0', port=8080, debug=True)
+    socket.run(app, host='0.0.0.0', port=8080)
