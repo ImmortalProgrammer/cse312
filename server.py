@@ -164,7 +164,7 @@ def handle_post_request(data):
         }
         post_collection.insert_one(myPost)
 
-        socket.emit('create_post_event')
+        emit('create_post_event')
 
 @app.route('/forum/<post_id>/like', methods=['POST'])
 def like_post(post_id):
@@ -199,7 +199,7 @@ def handle_forum_update_request():
         if post.get("image_path"):
             post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
 
-    socket.emit("update_forum", chat_history)
+    emit("update_forum", chat_history, broadcast=True)
 
 
 
