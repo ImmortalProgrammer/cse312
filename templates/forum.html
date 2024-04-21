@@ -147,7 +147,9 @@
         socket.on('update_forum', function(data) {
         const forumContainer = document.getElementById("forumContainer");
         forumContainer.innerHTML = "";
-
+        
+        data.reverse();
+        
         data.forEach(post => {
             const newForumBox = document.createElement("div");
             newForumBox.classList.add("card", "mb-2");
