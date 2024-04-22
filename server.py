@@ -11,7 +11,7 @@ import secrets
 import imghdr
 import hashlib
 from io import BytesIO
-from flask_sslify import SSLify
+# from flask_sslify import SSLify
 from flask_socketio import SocketIO, emit
 
 
@@ -20,7 +20,7 @@ app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
 socket = SocketIO(app)
 # FORCE HTTPS
-sslify = SSLify(app)
+# sslify = SSLify(app)
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
