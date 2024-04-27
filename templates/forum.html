@@ -136,6 +136,8 @@
     
             this.reset();
         });
+
+
     
         // Add an event listener for the "Schedule Post" button
         document.getElementById("schedulePostButton").addEventListener("click", function() {
@@ -186,9 +188,6 @@
                 try {
                     // Emit WebSocket event to notify the server about the like action
                     socket.emit('like_post', { postId });
-
-                    // Update UI 
-                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1;
                 } catch (error) {
                     console.error("Error:", error);
                 }
@@ -201,7 +200,7 @@
 
             // Find the like count element for the corresponding post
             const likeCountElement = document.querySelector(`.forum-item[data-post-id="${postId}"] .like-count`);
-            
+
             // Update the like count in the UI
             if (likeCountElement) {
                 likeCountElement.textContent = likeCount ;

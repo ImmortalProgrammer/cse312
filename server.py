@@ -165,7 +165,7 @@ def handle_post_request(data):
     idplusone.reverse()
     idplusone[0]["id"] = idplusone[0]["id"] + 1
     chat_id.insert_one({'id': idplusone[0]['id']})
-    usernameFound = ""
+
     if 'user_token' in request.cookies:
         userToken = request.cookies['user_token'].encode('utf-8')
         hashedToken = hashlib.sha256(userToken).hexdigest()
@@ -189,8 +189,9 @@ def handle_post_request(data):
 
         emit('create_post_event')
 
-@app.route('/forum/<post_id>/like', methods=['POST'])
-def like_post(post_id):
+@socket.on("like_post")
+def like_post(data):
+    post_id = data["postId"]
     post = post_collection.find_one({'id': post_id})
     if not post:
         return jsonify({"error": "Post not found"}), 404
@@ -208,8 +209,13 @@ def like_post(post_id):
     if user["username"] in liked_by:
         return jsonify({"error": "You have already liked this post"}), 400
 
-    post_collection.update_one({'id': post_id}, {'$inc': {'likes': 1}, '$push': {'liked_by': user["username"]}})
+    new_like_count = post.get('likes', 0) + 1
+    post_collection.update_one({'id': post_id}, {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
+
+    socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
+
     return jsonify({"message": "Like count updated successfully"}), 200
+
 
 @socket.on('forum_update_request')
 def handle_forum_update_request():
