@@ -182,27 +182,34 @@
                 const forumItem = event.target.closest(".forum-item");
                 const likeCountElement = forumItem.querySelector(".like-count");
                 const postId = forumItem.dataset.postId;
-    
+
                 try {
-                    const response = await fetch(`http://localhost:8080/forum/${postId}/like`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        }
-                    });
-    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-    
-                    const data = await response.json();
-                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1; // Update like count
+                    // Emit WebSocket event to notify the server about the like action
+                    socket.emit('like_post', { postId });
+
+                    // Update UI 
+                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1;
                 } catch (error) {
                     console.error("Error:", error);
                 }
             }
         });
-    
+            
+        socket.on('update_like_count', function(data) {
+            const postId = data.postId;
+            const likeCount = data.likeCount; // Assuming the server sends back the updated like count
+
+            // Find the like count element for the corresponding post
+            const likeCountElement = document.querySelector(`.forum-item[data-post-id="${postId}"] .like-count`);
+            
+            // Update the like count in the UI
+            if (likeCountElement) {
+                likeCountElement.textContent = likeCount ;
+            } else {
+                console.error("Like count element not found for postId:", postId);
+            }
+        });
+
         function updateForum() {
             socket.emit('forum_update_request');
         }
