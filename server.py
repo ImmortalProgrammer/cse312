@@ -1,7 +1,7 @@
+import datetime
 import os
 import uuid
-import time
-import flask
+from pytz import timezone
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
@@ -11,16 +11,18 @@ import secrets
 import imghdr
 import hashlib
 from io import BytesIO
-# from flask_sslify import SSLify
 from flask_socketio import SocketIO, emit
-
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
+
 socket = SocketIO(app)
-# FORCE HTTPS
-# sslify = SSLify(app)
+# https://apscheduler.readthedocs.io/en/3.x/
+scheduler = BackgroundScheduler()
+scheduler.start()
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
@@ -135,6 +137,7 @@ def logout():
         response.status_code = 302
         return response
 
+
 @socket.on("post_data")
 def handle_post_request(data):
     xsrf_token = data["xsrf"]
@@ -149,7 +152,7 @@ def handle_post_request(data):
     # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
     if image_bytes:
         image_file = BytesIO(image_bytes)
-        image_file.filename = "image."+ file_ext
+        image_file.filename = "image." + file_ext
         filename = secure_filename(image_file.filename)
         filename = str(uuid.uuid4()) + "-_-_-_-" + filename
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -157,7 +160,6 @@ def handle_post_request(data):
             image.write(image_bytes)
     else:
         image_path = None
-
 
     if chat_id.count_documents({}) == 0:
         chat_id.insert_one({'id': 0})
@@ -189,6 +191,7 @@ def handle_post_request(data):
 
         emit('create_post_event')
 
+
 @socket.on("like_post")
 def like_post(data):
     post_id = data["postId"]
@@ -210,7 +213,8 @@ def like_post(data):
         return jsonify({"error": "You have already liked this post"}), 400
 
     new_like_count = post.get('likes', 0) + 1
-    post_collection.update_one({'id': post_id}, {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
+    post_collection.update_one({'id': post_id},
+                               {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
 
     socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
 
@@ -222,11 +226,72 @@ def handle_forum_update_request():
     chat_history = list(post_collection.find({}, {'_id': 0}))
     for post in chat_history:
         if post.get("image_path"):
-            post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+                post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
 
     emit("update_forum", chat_history, broadcast=True)
 
 
+def handle_post_data(data, userToken):
+    xsrf_token = data["xsrf"]
+    title = data["title"]
+    description = data["description"]
+    image_bytes = data["image"]
+
+    file_ext = imghdr.what(None, h=image_bytes)
+    if not file_ext:
+        file_ext = "jpg"
+
+    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+    if image_bytes:
+        image_file = BytesIO(image_bytes)
+        image_file.filename = "image." + file_ext
+        filename = secure_filename(image_file.filename)
+        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(image_path, 'wb') as image:
+            image.write(image_bytes)
+    else:
+        image_path = None
+
+    if chat_id.count_documents({}) == 0:
+        chat_id.insert_one({'id': 0})
+    idplusone = list(chat_id.find({}, {'_id': 0}))
+    idplusone.reverse()
+    idplusone[0]["id"] = idplusone[0]["id"] + 1
+    chat_id.insert_one({'id': idplusone[0]['id']})
+
+    hashedToken = hashlib.sha256(userToken).hexdigest()
+
+    user = user_collection.find_one({"authentication_token": hashedToken})
+    if user:
+        if user['xsrf_token'] == xsrf_token:
+            username = user['username']
+        else:
+            return "Forbidden", 403
+    else:
+        return "Forbidden", 403
+    myPost = {
+        'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+        'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+        'username': username,
+        'id': str(idplusone[0]['id']),
+        'likes': 0,
+        'image_path': image_path
+    }
+    post_collection.insert_one(myPost)
+
+
+@socket.on("schedule_post")
+def schedule_post(data):
+    schedule_time = data["scheduleTime"]
+    schedule_time = datetime.strptime(schedule_time, "%Y-%m-%dT%H:%M")
+    EST_timezone = timezone('US/Eastern')
+    schedule_time = EST_timezone.localize(schedule_time)
+
+    post_data = data["formData"]
+    if 'user_token' in request.cookies:
+        userToken = request.cookies.get('user_token', '').encode('utf-8')
+        scheduler.add_job(handle_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
 
 if __name__ == "__main__":
     socket.run(app, host='0.0.0.0', port=8080)
