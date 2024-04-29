@@ -105,13 +105,15 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button id="scheduleButton" type="button" class="btn btn-primary">Schedule</button>
+                    <button id="scheduleButton" type="button" data-bs-dismiss="modal" class="btn btn-primary">Schedule</button>
                 </div>
             </div>
         </div>
     </div>
 
     <div id="forumContainer" class="container"></div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js" integrity="sha512-luMnTJZ7oEchNDZAtQhgjomP1eZefnl82ruTH/3Oj/Yu5qYtwL7+dVRccACS/Snp1lFXq188XFipHKYE75IaQQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
         let socket = io.connect("/");
@@ -136,16 +138,12 @@
     
             this.reset();
         });
-
-
     
         // Add an event listener for the "Schedule Post" button
         document.getElementById("schedulePostButton").addEventListener("click", function() {
             // Open the schedule modal
             $('#scheduleModal').modal('show');
         });
-
-
 
         // Add an event listener for the "Schedule" button within the modal
         document.getElementById("scheduleButton").addEventListener("click", function() {
@@ -164,11 +162,11 @@
             // Emit the scheduled post data over WebSocket
             socket.emit('schedule_post', { scheduleTime, formData: jsonObject });
 
-            // Close the modal after scheduling
-            $('#scheduleModal').modal('hide');
+            // // Close the modal after scheduling
+            // $('#scheduleModal').modal('hide');
 
             // Reset schedule time input
-            document.getElementById("scheduleTime").value = '';
+            this.reset() ;
         });
     
         // // Modify the WebSocket event handler to handle scheduled posts
@@ -190,6 +188,9 @@
                 try {
                     // Emit WebSocket event to notify the server about the like action
                     socket.emit('like_post', { postId });
+
+                    // Update UI 
+                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1;
                 } catch (error) {
                     console.error("Error:", error);
                 }
@@ -202,7 +203,7 @@
 
             // Find the like count element for the corresponding post
             const likeCountElement = document.querySelector(`.forum-item[data-post-id="${postId}"] .like-count`);
-
+            
             // Update the like count in the UI
             if (likeCountElement) {
                 likeCountElement.textContent = likeCount ;
