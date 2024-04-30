@@ -52,20 +52,10 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#">My Posts</a>
                     </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Dropdown
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#">My Profile</a></li>
-                            <li><a class="dropdown-item" href="#">Settings</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <form action="/logout" method="post" enctype="application/x-www-form-urlencoded">
-                                    <input type="submit" class="dropdown-item" value="Log Out">
-                                </form>
-                            </li>
-                        </ul>
+                    <li class="nav-item">
+                        <form action="/logout" method="post" enctype="application/x-www-form-urlencoded">
+                            <input type="submit" class="dropdown-item" value="Log Out">
+                        </form>
                     </li>
                 </ul>
                 <div class="d-flex">
