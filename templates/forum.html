@@ -243,7 +243,9 @@
                 forumContainer.appendChild(newForumBox);
             });
         });
-        updateForum();
+
+        setInterval(updateForum, 100);
+
 
         const darkThemeToggle = document.getElementById("darkThemeToggle");
 

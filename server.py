@@ -1,6 +1,9 @@
 import datetime
 import os
+import time
 import uuid
+from functools import wraps
+
 from pytz import timezone
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
@@ -30,6 +33,8 @@ user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
 
+global posts_count
+posts_count = post_collection.count_documents({})
 
 @app.after_request
 def header(response):
@@ -223,15 +228,22 @@ def like_post(data):
 
 @socket.on('forum_update_request')
 def handle_forum_update_request():
-    chat_history = list(post_collection.find({}, {'_id': 0}))
-    for post in chat_history:
-        if post.get("image_path"):
+    global posts_count
+    database_posts = db["posts"]
+    current_db_post_count = database_posts.count_documents({})
+
+    if current_db_post_count > posts_count:
+        chat_history = list(post_collection.find({}, {'_id': 0}))
+        for post in chat_history:
+            if post.get("image_path"):
                 post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
 
-    emit("update_forum", chat_history, broadcast=True)
+        emit("update_forum", chat_history, broadcast=True)
+    else:
+        posts_count = current_db_post_count
 
 
-def handle_post_data(data, userToken):
+def schedule_post_data(data, userToken):
     xsrf_token = data["xsrf"]
     title = data["title"]
     description = data["description"]
@@ -291,7 +303,8 @@ def schedule_post(data):
     post_data = data["formData"]
     if 'user_token' in request.cookies:
         userToken = request.cookies.get('user_token', '').encode('utf-8')
-        scheduler.add_job(handle_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
+        scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
+
 
 if __name__ == "__main__":
     socket.run(app, host='0.0.0.0', port=8080)
