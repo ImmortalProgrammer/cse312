@@ -1,7 +1,9 @@
-import datetime
 import os
 import uuid
 from pytz import timezone
+import time
+from time import time
+import flask
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
@@ -11,7 +13,10 @@ import secrets
 import imghdr
 import hashlib
 from io import BytesIO
+from flask_sslify import SSLify
+from flask_limiter import Limiter
 from flask_socketio import SocketIO, emit
+from flask_limiter.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
@@ -24,11 +29,19 @@ socket = SocketIO(app)
 scheduler = BackgroundScheduler()
 scheduler.start()
 
+limiter = Limiter(
+    app,
+    key_func=get_remote_address,
+    default_limits=["50 per 10 second"]
+)
+
 mongo_client = MongoClient("mongo")
 db = mongo_client["cse312"]
 user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
+
+messageTimestamp = {}
 
 
 @app.after_request
@@ -43,6 +56,7 @@ def uploaded_file(filename):
 
 
 @app.route('/')
+@limiter.limit("50/10second;1/30second")
 def index():
     user_token = request.cookies.get('user_token')
     if user_token:
@@ -54,6 +68,7 @@ def index():
 
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("50/10second;1/30second")
 def login():
     user_token = request.cookies.get('user_token')
     if user_token:
@@ -89,6 +104,7 @@ def login():
 
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("50/10second;1/30second")
 def register():
     user_token = request.cookies.get('user_token')
     if user_token and user_token != '':
@@ -126,6 +142,7 @@ def register():
 
 
 @app.route('/logout', methods=['POST'])
+@limiter.limit("50/10second;1/30second")
 def logout():
     user_token = request.cookies.get('user_token')
     if user_token:
@@ -140,37 +157,180 @@ def logout():
 
 @socket.on("post_data")
 def handle_post_request(data):
-    xsrf_token = data["xsrf"]
-    title = data["title"]
-    description = data["description"]
-    image_bytes = data["image"]
-
-    file_ext = imghdr.what(None, h=image_bytes)
-    if not file_ext:
-        file_ext = "jpg"
-
-    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_bytes:
-        image_file = BytesIO(image_bytes)
-        image_file.filename = "image." + file_ext
-        filename = secure_filename(image_file.filename)
-        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(image_path, 'wb') as image:
-            image.write(image_bytes)
+    ip = request.remote_addr
+    currenttime = time()
+    timestamps = messageTimestamp.get(ip, [])
+    caltimestamps = []
+    for seconds in timestamps:
+        if currenttime - seconds < 10:
+            caltimestamps.append(seconds)
+    timestamps = caltimestamps
+    if len(timestamps) > 50:
+        emit('too_many_requests', {'status_code': 429, 'message': 'You have exceeded the rate limit.'})
     else:
-        image_path = None
+        timestamps.append(currenttime)
+        messageTimestamp[ip] = timestamps
+        xsrf_token = data["xsrf"]
+        title = data["title"]
+        description = data["description"]
+        image_bytes = data["image"]
 
-    if chat_id.count_documents({}) == 0:
-        chat_id.insert_one({'id': 0})
-    idplusone = list(chat_id.find({}, {'_id': 0}))
-    idplusone.reverse()
-    idplusone[0]["id"] = idplusone[0]["id"] + 1
-    chat_id.insert_one({'id': idplusone[0]['id']})
+        file_ext = imghdr.what(None, h=image_bytes)
+        if not file_ext:
+            file_ext = "jpg"
 
-    if 'user_token' in request.cookies:
-        userToken = request.cookies['user_token'].encode('utf-8')
+        # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+        if image_bytes:
+            image_file = BytesIO(image_bytes)
+            image_file.filename = "image." + file_ext
+            filename = secure_filename(image_file.filename)
+            filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(image_path, 'wb') as image:
+                image.write(image_bytes)
+        else:
+            image_path = None
+
+        if chat_id.count_documents({}) == 0:
+            chat_id.insert_one({'id': 0})
+        idplusone = list(chat_id.find({}, {'_id': 0}))
+        idplusone.reverse()
+        idplusone[0]["id"] = idplusone[0]["id"] + 1
+        chat_id.insert_one({'id': idplusone[0]['id']})
+
+        if 'user_token' in request.cookies:
+            userToken = request.cookies['user_token'].encode('utf-8')
+            hashedToken = hashlib.sha256(userToken).hexdigest()
+            user = user_collection.find_one({"authentication_token": hashedToken})
+            if user:
+                if user['xsrf_token'] == xsrf_token:
+                    username = user['username']
+                else:
+                    return "Forbidden", 403
+            else:
+                return "Forbidden", 403
+            myPost = {
+                'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+                'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+                'username': username,
+                'id': str(idplusone[0]['id']),
+                'likes': 0,
+                'image_path': image_path
+            }
+            post_collection.insert_one(myPost)
+
+            emit('create_post_event')
+
+
+@socket.on("like_post")
+def like_post(data):
+    ip = request.remote_addr
+    currenttime = time()
+    timestamps = messageTimestamp.get(ip, [])
+    caltimestamps = []
+    for seconds in timestamps:
+        if currenttime - seconds < 10:
+            caltimestamps.append(seconds)
+    timestamps = caltimestamps
+    if len(timestamps) > 50:
+        emit('too_many_requests', {'status_code': 429, 'message': 'You have exceeded the rate limit.'})
+    else:
+        timestamps.append(currenttime)
+        messageTimestamp[ip] = timestamps
+        post_id = data["postId"]
+        post = post_collection.find_one({'id': post_id})
+        if not post:
+            return jsonify({"error": "Post not found"}), 404
+
+        user_token = request.cookies.get('user_token')
+        if not user_token:
+            return jsonify({"error": "User not authenticated"}), 401
+
+        user_token_hash = hashlib.sha256(user_token.encode()).hexdigest()
+        user = user_collection.find_one({"authentication_token": user_token_hash})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        liked_by = post.get("liked_by", [])
+        if user["username"] in liked_by:
+            return jsonify({"error": "You have already liked this post"}), 400
+
+        new_like_count = post.get('likes', 0) + 1
+        post_collection.update_one({'id': post_id},
+                                   {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
+
+        socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
+
+    return jsonify({"message": "Like count updated successfully"}), 200
+
+
+@socket.on('forum_update_request')
+def handle_forum_update_request():
+    ip = request.remote_addr
+    currenttime = time()
+    timestamps = messageTimestamp.get(ip, [])
+    caltimestamps = []
+    for seconds in timestamps:
+        if currenttime - seconds < 10:
+            caltimestamps.append(seconds)
+    timestamps = caltimestamps
+    if len(timestamps) > 50:
+        emit('too_many_requests', {'status_code': 429, 'message': 'You have exceeded the rate limit.'})
+    else:
+        timestamps.append(currenttime)
+        messageTimestamp[ip] = timestamps
+        chat_history = list(post_collection.find({}, {'_id': 0}))
+        for post in chat_history:
+            if post.get("image_path"):
+                post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+
+        emit("update_forum", chat_history, broadcast=True)
+
+
+def handle_post_data(data, userToken):
+    ip = request.remote_addr
+    currenttime = time()
+    timestamps = messageTimestamp.get(ip, [])
+    caltimestamps = []
+    for seconds in timestamps:
+        if currenttime - seconds < 10:
+            caltimestamps.append(seconds)
+    timestamps = caltimestamps
+    if len(timestamps) > 50:
+        emit('too_many_requests', {'status_code': 429, 'message': 'You have exceeded the rate limit.'})
+    else:
+        timestamps.append(currenttime)
+        messageTimestamp[ip] = timestamps
+        xsrf_token = data["xsrf"]
+        title = data["title"]
+        description = data["description"]
+        image_bytes = data["image"]
+
+        file_ext = imghdr.what(None, h=image_bytes)
+        if not file_ext:
+            file_ext = "jpg"
+
+        # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+        if image_bytes:
+            image_file = BytesIO(image_bytes)
+            image_file.filename = "image." + file_ext
+            filename = secure_filename(image_file.filename)
+            filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(image_path, 'wb') as image:
+                image.write(image_bytes)
+        else:
+            image_path = None
+
+        if chat_id.count_documents({}) == 0:
+            chat_id.insert_one({'id': 0})
+        idplusone = list(chat_id.find({}, {'_id': 0}))
+        idplusone.reverse()
+        idplusone[0]["id"] = idplusone[0]["id"] + 1
+        chat_id.insert_one({'id': idplusone[0]['id']})
+
         hashedToken = hashlib.sha256(userToken).hexdigest()
+
         user = user_collection.find_one({"authentication_token": hashedToken})
         if user:
             if user['xsrf_token'] == xsrf_token:
@@ -189,109 +349,32 @@ def handle_post_request(data):
         }
         post_collection.insert_one(myPost)
 
-        emit('create_post_event')
-
-
-@socket.on("like_post")
-def like_post(data):
-    post_id = data["postId"]
-    post = post_collection.find_one({'id': post_id})
-    if not post:
-        return jsonify({"error": "Post not found"}), 404
-
-    user_token = request.cookies.get('user_token')
-    if not user_token:
-        return jsonify({"error": "User not authenticated"}), 401
-
-    user_token_hash = hashlib.sha256(user_token.encode()).hexdigest()
-    user = user_collection.find_one({"authentication_token": user_token_hash})
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    liked_by = post.get("liked_by", [])
-    if user["username"] in liked_by:
-        return jsonify({"error": "You have already liked this post"}), 400
-
-    new_like_count = post.get('likes', 0) + 1
-    post_collection.update_one({'id': post_id},
-                               {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
-
-    socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
-
-    return jsonify({"message": "Like count updated successfully"}), 200
-
-
-@socket.on('forum_update_request')
-def handle_forum_update_request():
-    chat_history = list(post_collection.find({}, {'_id': 0}))
-    for post in chat_history:
-        if post.get("image_path"):
-                post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
-
-    emit("update_forum", chat_history, broadcast=True)
-
-
-def handle_post_data(data, userToken):
-    xsrf_token = data["xsrf"]
-    title = data["title"]
-    description = data["description"]
-    image_bytes = data["image"]
-
-    file_ext = imghdr.what(None, h=image_bytes)
-    if not file_ext:
-        file_ext = "jpg"
-
-    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_bytes:
-        image_file = BytesIO(image_bytes)
-        image_file.filename = "image." + file_ext
-        filename = secure_filename(image_file.filename)
-        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(image_path, 'wb') as image:
-            image.write(image_bytes)
-    else:
-        image_path = None
-
-    if chat_id.count_documents({}) == 0:
-        chat_id.insert_one({'id': 0})
-    idplusone = list(chat_id.find({}, {'_id': 0}))
-    idplusone.reverse()
-    idplusone[0]["id"] = idplusone[0]["id"] + 1
-    chat_id.insert_one({'id': idplusone[0]['id']})
-
-    hashedToken = hashlib.sha256(userToken).hexdigest()
-
-    user = user_collection.find_one({"authentication_token": hashedToken})
-    if user:
-        if user['xsrf_token'] == xsrf_token:
-            username = user['username']
-        else:
-            return "Forbidden", 403
-    else:
-        return "Forbidden", 403
-    myPost = {
-        'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-        'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-        'username': username,
-        'id': str(idplusone[0]['id']),
-        'likes': 0,
-        'image_path': image_path
-    }
-    post_collection.insert_one(myPost)
-
 
 @socket.on("schedule_post")
 def schedule_post(data):
-    schedule_time = data["scheduleTime"]
-    schedule_time = datetime.strptime(schedule_time, "%Y-%m-%dT%H:%M")
-    EST_timezone = timezone('US/Eastern')
-    schedule_time = EST_timezone.localize(schedule_time)
+    ip = request.remote_addr
+    currenttime = time()
+    timestamps = messageTimestamp.get(ip, [])
+    caltimestamps = []
+    for seconds in timestamps:
+        if currenttime - seconds < 10:
+            caltimestamps.append(seconds)
+    timestamps = caltimestamps
+    if len(timestamps) > 50:
+        emit('too_many_requests', {'status_code': 429, 'message': 'You have exceeded the rate limit.'})
+    else:
+        timestamps.append(currenttime)
+        messageTimestamp[ip] = timestamps
+        schedule_time = data["scheduleTime"]
+        schedule_time = datetime.strptime(schedule_time, "%Y-%m-%dT%H:%M")
+        EST_timezone = timezone('US/Eastern')
+        schedule_time = EST_timezone.localize(schedule_time)
 
-    post_data = data["formData"]
-    if 'user_token' in request.cookies:
-        userToken = request.cookies.get('user_token', '').encode('utf-8')
-        scheduler.add_job(handle_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
+        post_data = data["formData"]
+        if 'user_token' in request.cookies:
+            userToken = request.cookies.get('user_token', '').encode('utf-8')
+            scheduler.add_job(handle_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
+
 
 if __name__ == "__main__":
     socket.run(app, host='0.0.0.0', port=8080)
