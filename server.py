@@ -22,6 +22,37 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
 
+ip_addresses_and_requests = {}
+blacklisted_IPS = {}
+
+REQUESTS_LIMIT = 50
+BLOCKING_LENGTH = 30
+
+def ip_status(IP_addr):
+    if IP_addr in blacklisted_IPS:
+        if time.time() - blacklisted_IPS[IP_addr] > BLOCKING_LENGTH:
+            del blacklisted_IPS[IP_addr]
+            ip_addresses_and_requests[IP_addr] = 0
+            return False
+        else:
+            return True
+    return False
+
+def check_ip(IP):
+    if ip_status(IP):
+        return "429 ERROR! You have sent too many requests in a short period of time!", 429
+
+    if IP in ip_addresses_and_requests:
+        ip_addresses_and_requests[IP] += 1
+    else:
+        ip_addresses_and_requests[IP] = 1
+
+    if ip_addresses_and_requests[IP] > REQUESTS_LIMIT:
+        blacklisted_IPS[IP] = time.time()
+        return "429 ERROR! You have sent too many requests in a short period of time!", 429
+
+
+
 socket = SocketIO(app)
 # https://apscheduler.readthedocs.io/en/3.x/
 scheduler = BackgroundScheduler()
@@ -32,9 +63,7 @@ db = mongo_client["cse312"]
 user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
-
-global posts_count
-posts_count = post_collection.count_documents({})
+scheduled_posts = db["scheduled_posts"]
 
 @app.after_request
 def header(response):
@@ -47,8 +76,15 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
+
 @app.route('/')
 def index():
+    ip = request.remote_addr
+    ip_check_msg = check_ip(ip)
+
+    if ip_check_msg:
+        return ip_check_msg
+
     user_token = request.cookies.get('user_token')
     if user_token:
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
@@ -60,6 +96,12 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    ip = request.remote_addr
+    ip_check_msg = check_ip(ip)
+
+    if ip_check_msg:
+        return ip_check_msg
+
     user_token = request.cookies.get('user_token')
     if user_token:
         return redirect(url_for('index'))
@@ -95,6 +137,11 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    ip = request.remote_addr
+    ip_check_msg = check_ip(ip)
+
+    if ip_check_msg:
+        return ip_check_msg
     user_token = request.cookies.get('user_token')
     if user_token and user_token != '':
         return redirect(url_for('index'))
@@ -190,7 +237,7 @@ def handle_post_request(data):
             'username': username,
             'id': str(idplusone[0]['id']),
             'likes': 0,
-            'image_path': image_path
+            'image_path': image_path,
         }
         post_collection.insert_one(myPost)
 
@@ -229,15 +276,28 @@ def like_post(data):
 @socket.on('forum_update_request')
 def handle_forum_update_request():
     chat_history = list(post_collection.find({}, {'_id': 0}))
-    for post in chat_history:
+
+    if 'user_token' in request.cookies:
+        userToken = request.cookies['user_token'].encode('utf-8')
+        hashedToken = hashlib.sha256(userToken).hexdigest()
+        user = user_collection.find_one({"authentication_token": hashedToken})
+        if user:
+            username = user['username']
+        else:
+            return "Forbidden", 403
+
+    scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
+    total_posts = scheduled_posts_data + chat_history
+
+    for post in total_posts:
         if post.get("image_path"):
             post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
 
-    emit("update_forum", chat_history, broadcast=True)
+    emit("update_forum", total_posts, broadcast=True)
 
 
 
-def schedule_post_data(data, userToken):
+def schedule_post_data(data, userToken, gen_id):
     xsrf_token = data["xsrf"]
     title = data["title"]
     description = data["description"]
@@ -259,13 +319,6 @@ def schedule_post_data(data, userToken):
     else:
         image_path = None
 
-    if chat_id.count_documents({}) == 0:
-        chat_id.insert_one({'id': 0})
-    idplusone = list(chat_id.find({}, {'_id': 0}))
-    idplusone.reverse()
-    idplusone[0]["id"] = idplusone[0]["id"] + 1
-    chat_id.insert_one({'id': idplusone[0]['id']})
-
     hashedToken = hashlib.sha256(userToken).hexdigest()
 
     user = user_collection.find_one({"authentication_token": hashedToken})
@@ -280,12 +333,62 @@ def schedule_post_data(data, userToken):
         'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
         'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
         'username': username,
-        'id': str(idplusone[0]['id']),
+        'id': gen_id,
         'likes': 0,
-        'image_path': image_path
+        'image_path': image_path,
+        'scheduled_post': True,
     }
     post_collection.insert_one(myPost)
 
+    scheduled_posts.delete_one({'id': gen_id})
+
+
+
+def show_user_scheduled_posts_before_posting(data, gen_id):
+    xsrf_token = data["xsrf"]
+    title = data["title"]
+    description = data["description"]
+    image_bytes = data["image"]
+
+    # Authenticate
+    if 'user_token' in request.cookies:
+        userToken = request.cookies['user_token'].encode('utf-8')
+        hashedToken = hashlib.sha256(userToken).hexdigest()
+        user = user_collection.find_one({"authentication_token": hashedToken})
+        if user:
+            if user['xsrf_token'] == xsrf_token:
+                username = user['username']
+            else:
+                return "Forbidden", 403
+        else:
+            return "Forbidden", 403
+
+    file_ext = imghdr.what(None, h=image_bytes)
+    if not file_ext:
+        file_ext = "jpg"
+
+    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+    if image_bytes:
+        image_file = BytesIO(image_bytes)
+        image_file.filename = "image." + file_ext
+        filename = secure_filename(image_file.filename)
+        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(image_path, 'wb') as image:
+            image.write(image_bytes)
+    else:
+        image_path = None
+
+    myPost = {
+        'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+        'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
+        'username': username,
+        'id': gen_id,
+        'likes': 0,
+        'image_path': image_path
+    }
+
+    scheduled_posts.insert_one(myPost)
 
 @socket.on("schedule_post")
 def schedule_post(data):
@@ -296,8 +399,10 @@ def schedule_post(data):
 
     post_data = data["formData"]
     if 'user_token' in request.cookies:
+        gen_id = str(uuid.uuid4())
         userToken = request.cookies.get('user_token', '').encode('utf-8')
-        scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, userToken])
+        scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, userToken, gen_id])
+        show_user_scheduled_posts_before_posting(post_data, gen_id)
 
 
 if __name__ == "__main__":
