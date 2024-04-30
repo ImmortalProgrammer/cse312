@@ -228,19 +228,13 @@ def like_post(data):
 
 @socket.on('forum_update_request')
 def handle_forum_update_request():
-    global posts_count
-    database_posts = db["posts"]
-    current_db_post_count = database_posts.count_documents({})
+    chat_history = list(post_collection.find({}, {'_id': 0}))
+    for post in chat_history:
+        if post.get("image_path"):
+            post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
 
-    if current_db_post_count > posts_count:
-        chat_history = list(post_collection.find({}, {'_id': 0}))
-        for post in chat_history:
-            if post.get("image_path"):
-                post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+    emit("update_forum", chat_history, broadcast=True)
 
-        emit("update_forum", chat_history, broadcast=True)
-    else:
-        posts_count = current_db_post_count
 
 
 def schedule_post_data(data, userToken):

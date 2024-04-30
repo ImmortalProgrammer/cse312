@@ -183,8 +183,6 @@
                     // Emit WebSocket event to notify the server about the like action
                     socket.emit('like_post', { postId });
 
-                    // Update UI 
-                    likeCountElement.textContent = parseInt(likeCountElement.textContent || 0) + 1;
                 } catch (error) {
                     console.error("Error:", error);
                 }
@@ -244,8 +242,8 @@
             });
         });
 
-        setInterval(updateForum, 100);
-
+        updateForum();
+        setInterval(updateForum, 1000);
 
         const darkThemeToggle = document.getElementById("darkThemeToggle");
 
