@@ -1,37 +1,27 @@
+import imghdr
+import os
 import re
-import time
-
-ip_addresses_and_requests = {}
-blacklisted_IPS = {}
-
-
-REQUESTS_LIMIT = 50
-BLOCKING_LENGTH = 30
+import uuid
+from io import BytesIO
+from werkzeug.utils import secure_filename
 
 
-def ip_status(IP_addr):
-    if IP_addr in blacklisted_IPS:
-        if time.time() - blacklisted_IPS[IP_addr] > BLOCKING_LENGTH:
-            del blacklisted_IPS[IP_addr]
-            ip_addresses_and_requests[IP_addr] = 0
-            return False
-        else:
-            return True
-    return False
+def find_image_path(image_bytes, app):
+    file_ext = imghdr.what(None, h=image_bytes)
 
-
-def check_ip(IP):
-    if ip_status(IP):
-        return "429 ERROR! You have sent too many requests in a short period of time!", 429
-
-    if IP in ip_addresses_and_requests:
-        ip_addresses_and_requests[IP] += 1
+    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+    if image_bytes:
+        image_file = BytesIO(image_bytes)
+        image_file.filename = "image." + file_ext
+        filename = secure_filename(image_file.filename)
+        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(image_path, 'wb') as image:
+            image.write(image_bytes)
     else:
-        ip_addresses_and_requests[IP] = 1
+        image_path = None
 
-    if ip_addresses_and_requests[IP] > REQUESTS_LIMIT:
-        blacklisted_IPS[IP] = time.time()
-        return "429 ERROR! You have sent too many requests in a short period of time!", 429
+    return image_path
 
 
 def is_valid_password(password):

@@ -1,30 +1,25 @@
 import datetime
-import os
-import time
 import uuid
-from functools import wraps
-
 from pytz import timezone
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
-from werkzeug.utils import secure_filename
+import basic_dos_protection
 import misc
 import secrets
-import imghdr
 import hashlib
-from io import BytesIO
 from flask_socketio import SocketIO, emit
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
+DEPLOYMENT = False
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
-
-
 socket = SocketIO(app)
 # https://apscheduler.readthedocs.io/en/3.x/
+
 scheduler = BackgroundScheduler()
 scheduler.start()
 
@@ -50,7 +45,7 @@ def uploaded_file(filename):
 @app.route('/')
 def index():
     ip = request.remote_addr
-    ip_check_msg = misc.check_ip(ip)
+    ip_check_msg = basic_dos_protection.check_ip(ip)
 
     if ip_check_msg:
         return ip_check_msg
@@ -64,51 +59,10 @@ def index():
     return render_template('login.html')
 
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    ip = request.remote_addr
-    ip_check_msg = misc.check_ip(ip)
-
-    if ip_check_msg:
-        return ip_check_msg
-
-    user_token = request.cookies.get('user_token')
-    if user_token:
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        user = user_collection.find_one({'username': username})
-
-        if user:
-            if bcrypt.checkpw(password.encode(), user['password']):
-                userToken = secrets.token_hex(15)
-                hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
-                xsrf_token = secrets.token_urlsafe(15)
-                user_collection.update_one({"username": username},
-                                           {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
-                forum_template = render_template('forum.html', xsrf=xsrf_token, username=user.get('username'))
-                loginResponse = make_response(forum_template)
-                loginResponse.set_cookie("user_token", userToken, httponly=True)
-                loginResponse.status_code = 302
-                loginResponse.headers['Location'] = url_for('index')
-                return loginResponse
-            else:
-                return "Invalid password", 401
-        else:
-            return "Username does not exist", 404
-    if request.method == 'GET':
-        response = make_response(render_template('login.html'))
-        response.status_code = 302
-        return response
-
-
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     ip = request.remote_addr
-    ip_check_msg = misc.check_ip(ip)
+    ip_check_msg = basic_dos_protection.check_ip(ip)
 
     if ip_check_msg:
         return ip_check_msg
@@ -147,6 +101,47 @@ def register():
         return response
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    ip = request.remote_addr
+    ip_check_msg = basic_dos_protection.check_ip(ip)
+
+    if ip_check_msg:
+        return ip_check_msg
+
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = user_collection.find_one({'username': username})
+
+        if user:
+            if bcrypt.checkpw(password.encode(), user['password']):
+                userToken = secrets.token_hex(15)
+                hashedToken = (hashlib.sha256(userToken.encode())).hexdigest()
+                xsrf_token = secrets.token_urlsafe(15)
+                user_collection.update_one({"username": username},
+                                           {"$set": {"authentication_token": hashedToken, "xsrf_token": xsrf_token}})
+                forum_template = render_template('forum.html', xsrf=xsrf_token, username=user.get('username'))
+                loginResponse = make_response(forum_template)
+                loginResponse.set_cookie("user_token", userToken, httponly=True, max_age=3600, secure=DEPLOYMENT)
+                loginResponse.status_code = 302
+                loginResponse.headers['Location'] = url_for('index')
+                return loginResponse
+            else:
+                return "Invalid password", 401
+        else:
+            return "Username does not exist", 404
+    if request.method == 'GET':
+        response = make_response(render_template('login.html'))
+        response.status_code = 302
+        return response
+
+
 @app.route('/logout', methods=['POST'])
 def logout():
     user_token = request.cookies.get('user_token')
@@ -160,6 +155,29 @@ def logout():
         return response
 
 
+@socket.on('forum_update_request')
+def handle_forum_update_request():
+    if 'user_token' in request.cookies:
+        userToken = request.cookies['user_token'].encode()
+        hashedToken = hashlib.sha256(userToken).hexdigest()
+        user = user_collection.find_one({"authentication_token": hashedToken})
+        if user:
+            username = user['username']
+            post_history = list(post_collection.find({}, {'_id': 0}))
+            scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
+            total_posts = scheduled_posts_data + post_history
+            total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min))
+
+            for post in total_posts:
+                post.pop('created_when', None)
+                if post.get("image_path"):
+                    post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+
+            emit("update_forum", total_posts)
+        else:
+            return "Forbidden", 403
+
+
 @socket.on("post_data")
 def handle_post_request(data):
     xsrf_token = data["xsrf"]
@@ -167,21 +185,7 @@ def handle_post_request(data):
     description = data["description"]
     image_bytes = data["image"]
 
-    file_ext = imghdr.what(None, h=image_bytes)
-    if not file_ext:
-        file_ext = "jpg"
-
-    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_bytes:
-        image_file = BytesIO(image_bytes)
-        image_file.filename = "image." + file_ext
-        filename = secure_filename(image_file.filename)
-        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(image_path, 'wb') as image:
-            image.write(image_bytes)
-    else:
-        image_path = None
+    image_path = misc.find_image_path(image_bytes, app)
 
     if chat_id.count_documents({}) == 0:
         chat_id.insert_one({'id': 0})
@@ -191,7 +195,7 @@ def handle_post_request(data):
     chat_id.insert_one({'id': idplusone[0]['id']})
 
     if 'user_token' in request.cookies:
-        userToken = request.cookies['user_token'].encode('utf-8')
+        userToken = request.cookies['user_token'].encode()
         hashedToken = hashlib.sha256(userToken).hexdigest()
         user = user_collection.find_one({"authentication_token": hashedToken})
         if user:
@@ -213,7 +217,7 @@ def handle_post_request(data):
         }
         post_collection.insert_one(myPost)
 
-        emit('create_post_event')
+        handle_forum_update_request()
 
 
 @socket.on("like_post")
@@ -245,51 +249,15 @@ def like_post(data):
     return jsonify({"message": "Like count updated successfully"}), 200
 
 
-@socket.on('forum_update_request')
-def handle_forum_update_request():
-    if 'user_token' in request.cookies:
-        userToken = request.cookies['user_token'].encode('utf-8')
-        hashedToken = hashlib.sha256(userToken).hexdigest()
-        user = user_collection.find_one({"authentication_token": hashedToken})
-        if user:
-            username = user['username']
-            post_history = list(post_collection.find({}, {'_id': 0}))
-            scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
-            total_posts = scheduled_posts_data + post_history
-            total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min))
-
-            for post in total_posts:
-                post.pop('created_when', None)
-                if post.get("image_path"):
-                    post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
-
-            emit("update_forum", total_posts)
-        else:
-            return "Forbidden", 403
-
-def process_post_data(data, userToken, gen_id, scheduled_post):
+def process_post_data(data, user_token, gen_id, scheduled_post):
     xsrf_token = data["xsrf"]
     title = data["title"]
     description = data["description"]
     image_bytes = data["image"]
 
-    file_ext = imghdr.what(None, h=image_bytes)
-    if not file_ext:
-        file_ext = "jpg"
+    image_path = misc.find_image_path(image_bytes, app)
 
-    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_bytes:
-        image_file = BytesIO(image_bytes)
-        image_file.filename = "image." + file_ext
-        filename = secure_filename(image_file.filename)
-        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(image_path, 'wb') as image:
-            image.write(image_bytes)
-    else:
-        image_path = None
-
-    hashedToken = hashlib.sha256(userToken).hexdigest()
+    hashedToken = hashlib.sha256(user_token).hexdigest()
 
     user = user_collection.find_one({"authentication_token": hashedToken})
     if user:
@@ -320,13 +288,14 @@ def process_post_data(data, userToken, gen_id, scheduled_post):
     return None
 
 
-def schedule_post_data(data, userToken, gen_id):
-    return process_post_data(data, userToken=userToken, gen_id=gen_id, scheduled_post=False)
+def schedule_post_data(data, user_token, gen_id):
+    return process_post_data(data, user_token=user_token, gen_id=gen_id, scheduled_post=False)
 
 
 def show_user_scheduled_posts_before_posting(data, gen_id):
-    return process_post_data(data, userToken=request.cookies.get('user_token', '').encode('utf-8'), gen_id=gen_id, scheduled_post=True)
-
+    process_post_data(data, user_token=request.cookies.get('user_token', '').encode(), gen_id=gen_id,
+                      scheduled_post=True)
+    handle_forum_update_request()
 
 
 @socket.on("schedule_post")
@@ -336,12 +305,20 @@ def schedule_post(data):
     EST_timezone = timezone('US/Eastern')
     schedule_time = EST_timezone.localize(schedule_time)
 
+    current_time = datetime.now(EST_timezone)
+    if schedule_time <= current_time:
+        return jsonify({"ERROR_MSG": "You cannot schedule a post in the past!"}), 400
+
     post_data = data["formData"]
     if 'user_token' in request.cookies:
         gen_id = str(uuid.uuid4())
-        userToken = request.cookies.get('user_token', '').encode('utf-8')
-        scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, userToken, gen_id])
-        show_user_scheduled_posts_before_posting(post_data, gen_id)
+        user_token = request.cookies.get('user_token', '').encode()
+        try:
+            scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, user_token, gen_id])
+            show_user_scheduled_posts_before_posting(post_data, gen_id)
+        except Exception as e:
+            pass
+
 
 
 if __name__ == "__main__":

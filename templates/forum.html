@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bootstrap demo</title>
+    <title>Basic Forum</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <style>
         
@@ -155,27 +155,15 @@
             // Emit the scheduled post data over WebSocket
             socket.emit('schedule_post', { scheduleTime, formData: jsonObject });
 
-            // // Close the modal after scheduling
-            // $('#scheduleModal').modal('hide');
 
             // Reset schedule time input
             this.reset() ;
         });
-    
-        // // Modify the WebSocket event handler to handle scheduled posts
-        // socket.on('schedule_post_success', function() {
-        //     alert("Post scheduled successfully!");
-        // });
-    
-        // socket.on('schedule_post_error', function(error) {
-        //     alert("Error scheduling post: " + error);
-        // });
-    
+
         // Function to handle like button click
         document.getElementById("forumContainer").addEventListener("click", async function(event) {
             if (event.target.classList.contains("like-btn")) {
                 const forumItem = event.target.closest(".forum-item");
-                const likeCountElement = forumItem.querySelector(".like-count");
                 const postId = forumItem.dataset.postId;
 
                 try {
@@ -242,7 +230,6 @@
         });
 
         updateForum();
-        setInterval(updateForum, 1000);
 
         const darkThemeToggle = document.getElementById("darkThemeToggle");
 
