@@ -307,7 +307,8 @@ def schedule_post(data):
 
     current_time = datetime.now(EST_timezone)
     if schedule_time <= current_time:
-        return jsonify({"ERROR_MSG": "You cannot schedule a post in the past!"}), 400
+        emit("ERROR_IN_POSTING_SCHEDULED_MSG_TIMING_ISSUE")
+        return
 
     post_data = data["formData"]
     if 'user_token' in request.cookies:

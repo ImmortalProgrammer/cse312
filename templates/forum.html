@@ -117,6 +117,14 @@
     
         document.getElementById("postForm").addEventListener("submit", async function(event) {
             event.preventDefault();
+
+            const title = this.querySelector('input[name="title"]').value.trim();
+            const description = this.querySelector('input[name="description"]').value.trim();
+
+            if (!title || !description) {
+                alert("Fill in both the title and description before posting!");
+                return;
+            }
     
             const formData = new FormData(this);
     
@@ -142,6 +150,14 @@
         document.getElementById("scheduleButton").addEventListener("click", function() {
             // Get schedule time
             const scheduleTime = document.getElementById("scheduleTime").value;
+
+            const title = document.querySelector('#postForm input[name="title"]').value.trim();
+            const description = document.querySelector('#postForm input[name="description"]').value.trim();
+
+            if (!title || !description) {
+                alert("Fill in both the title and description before scheduling!");
+                return;
+            }
 
             // Get form data
             const formData = new FormData(document.getElementById("postForm"));
@@ -194,6 +210,10 @@
         function updateForum() {
             socket.emit('forum_update_request');
         }
+
+        socket.on('ERROR_IN_POSTING_SCHEDULED_MSG_TIMING_ISSUE', function() {
+             alert("Schedule the post for at least one minute in the future.");
+        });
     
         socket.on('update_forum', function(data) {
             const forumContainer = document.getElementById("forumContainer");
