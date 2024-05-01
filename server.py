@@ -22,37 +22,6 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
 
-ip_addresses_and_requests = {}
-blacklisted_IPS = {}
-
-REQUESTS_LIMIT = 50
-BLOCKING_LENGTH = 30
-
-
-def ip_status(IP_addr):
-    if IP_addr in blacklisted_IPS:
-        if time.time() - blacklisted_IPS[IP_addr] > BLOCKING_LENGTH:
-            del blacklisted_IPS[IP_addr]
-            ip_addresses_and_requests[IP_addr] = 0
-            return False
-        else:
-            return True
-    return False
-
-
-def check_ip(IP):
-    if ip_status(IP):
-        return "429 ERROR! You have sent too many requests in a short period of time!", 429
-
-    if IP in ip_addresses_and_requests:
-        ip_addresses_and_requests[IP] += 1
-    else:
-        ip_addresses_and_requests[IP] = 1
-
-    if ip_addresses_and_requests[IP] > REQUESTS_LIMIT:
-        blacklisted_IPS[IP] = time.time()
-        return "429 ERROR! You have sent too many requests in a short period of time!", 429
-
 
 socket = SocketIO(app)
 # https://apscheduler.readthedocs.io/en/3.x/
@@ -81,7 +50,7 @@ def uploaded_file(filename):
 @app.route('/')
 def index():
     ip = request.remote_addr
-    ip_check_msg = check_ip(ip)
+    ip_check_msg = misc.check_ip(ip)
 
     if ip_check_msg:
         return ip_check_msg
@@ -98,7 +67,7 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     ip = request.remote_addr
-    ip_check_msg = check_ip(ip)
+    ip_check_msg = misc.check_ip(ip)
 
     if ip_check_msg:
         return ip_check_msg
@@ -139,7 +108,7 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     ip = request.remote_addr
-    ip_check_msg = check_ip(ip)
+    ip_check_msg = misc.check_ip(ip)
 
     if ip_check_msg:
         return ip_check_msg
@@ -298,8 +267,7 @@ def handle_forum_update_request():
         else:
             return "Forbidden", 403
 
-
-def schedule_post_data(data, userToken, gen_id):
+def process_post_data(data, userToken, gen_id, scheduled_post):
     xsrf_token = data["xsrf"]
     title = data["title"]
     description = data["description"]
@@ -331,6 +299,7 @@ def schedule_post_data(data, userToken, gen_id):
             return "Forbidden", 403
     else:
         return "Forbidden", 403
+
     myPost = {
         'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
         'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
@@ -338,61 +307,26 @@ def schedule_post_data(data, userToken, gen_id):
         'id': gen_id,
         'likes': 0,
         'image_path': image_path,
-        'scheduled_post': True,
+        'scheduled_post': scheduled_post,
         'created_when': datetime.now()
     }
-    post_collection.insert_one(myPost)
 
-    scheduled_posts.delete_one({'id': gen_id})
+    if scheduled_post:
+        scheduled_posts.insert_one(myPost)
+    else:
+        post_collection.insert_one(myPost)
+        scheduled_posts.delete_one({'id': gen_id})
+
+    return None
+
+
+def schedule_post_data(data, userToken, gen_id):
+    return process_post_data(data, userToken=userToken, gen_id=gen_id, scheduled_post=False)
 
 
 def show_user_scheduled_posts_before_posting(data, gen_id):
-    xsrf_token = data["xsrf"]
-    title = data["title"]
-    description = data["description"]
-    image_bytes = data["image"]
+    return process_post_data(data, userToken=request.cookies.get('user_token', '').encode('utf-8'), gen_id=gen_id, scheduled_post=True)
 
-    # Authenticate
-    if 'user_token' in request.cookies:
-        userToken = request.cookies['user_token'].encode('utf-8')
-        hashedToken = hashlib.sha256(userToken).hexdigest()
-        user = user_collection.find_one({"authentication_token": hashedToken})
-        if user:
-            if user['xsrf_token'] == xsrf_token:
-                username = user['username']
-            else:
-                return "Forbidden", 403
-        else:
-            return "Forbidden", 403
-
-    file_ext = imghdr.what(None, h=image_bytes)
-    if not file_ext:
-        file_ext = "jpg"
-
-    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
-    if image_bytes:
-        image_file = BytesIO(image_bytes)
-        image_file.filename = "image." + file_ext
-        filename = secure_filename(image_file.filename)
-        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(image_path, 'wb') as image:
-            image.write(image_bytes)
-    else:
-        image_path = None
-
-    myPost = {
-        'title': title.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-        'description': description.replace('&', "&amp;").replace('<', '&lt;').replace('>', '&gt;'),
-        'username': username,
-        'id': gen_id,
-        'likes': 0,
-        'image_path': image_path,
-        'scheduled_post': True,
-        'created_when': datetime.now()
-    }
-
-    scheduled_posts.insert_one(myPost)
 
 
 @socket.on("schedule_post")
