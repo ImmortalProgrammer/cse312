@@ -28,6 +28,7 @@ blacklisted_IPS = {}
 REQUESTS_LIMIT = 50
 BLOCKING_LENGTH = 30
 
+
 def ip_status(IP_addr):
     if IP_addr in blacklisted_IPS:
         if time.time() - blacklisted_IPS[IP_addr] > BLOCKING_LENGTH:
@@ -37,6 +38,7 @@ def ip_status(IP_addr):
         else:
             return True
     return False
+
 
 def check_ip(IP):
     if ip_status(IP):
@@ -52,7 +54,6 @@ def check_ip(IP):
         return "429 ERROR! You have sent too many requests in a short period of time!", 429
 
 
-
 socket = SocketIO(app)
 # https://apscheduler.readthedocs.io/en/3.x/
 scheduler = BackgroundScheduler()
@@ -65,6 +66,7 @@ post_collection = db['posts']
 chat_id = db['count']
 scheduled_posts = db["scheduled_posts"]
 
+
 @app.after_request
 def header(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -74,7 +76,6 @@ def header(response):
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
 
 
 @app.route('/')
@@ -238,6 +239,8 @@ def handle_post_request(data):
             'id': str(idplusone[0]['id']),
             'likes': 0,
             'image_path': image_path,
+            'scheduled_post': False,
+            'created_when': datetime.now()
         }
         post_collection.insert_one(myPost)
 
@@ -275,26 +278,25 @@ def like_post(data):
 
 @socket.on('forum_update_request')
 def handle_forum_update_request():
-    chat_history = list(post_collection.find({}, {'_id': 0}))
-
     if 'user_token' in request.cookies:
         userToken = request.cookies['user_token'].encode('utf-8')
         hashedToken = hashlib.sha256(userToken).hexdigest()
         user = user_collection.find_one({"authentication_token": hashedToken})
         if user:
             username = user['username']
+            post_history = list(post_collection.find({}, {'_id': 0}))
+            scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
+            total_posts = scheduled_posts_data + post_history
+            total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min))
+
+            for post in total_posts:
+                post.pop('created_when', None)
+                if post.get("image_path"):
+                    post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+
+            emit("update_forum", total_posts)
         else:
             return "Forbidden", 403
-
-    scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
-    total_posts = scheduled_posts_data + chat_history
-
-    for post in total_posts:
-        if post.get("image_path"):
-            post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
-
-    emit("update_forum", total_posts, broadcast=True)
-
 
 
 def schedule_post_data(data, userToken, gen_id):
@@ -337,11 +339,11 @@ def schedule_post_data(data, userToken, gen_id):
         'likes': 0,
         'image_path': image_path,
         'scheduled_post': True,
+        'created_when': datetime.now()
     }
     post_collection.insert_one(myPost)
 
     scheduled_posts.delete_one({'id': gen_id})
-
 
 
 def show_user_scheduled_posts_before_posting(data, gen_id):
@@ -385,10 +387,13 @@ def show_user_scheduled_posts_before_posting(data, gen_id):
         'username': username,
         'id': gen_id,
         'likes': 0,
-        'image_path': image_path
+        'image_path': image_path,
+        'scheduled_post': True,
+        'created_when': datetime.now()
     }
 
     scheduled_posts.insert_one(myPost)
+
 
 @socket.on("schedule_post")
 def schedule_post(data):
