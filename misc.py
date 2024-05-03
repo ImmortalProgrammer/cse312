@@ -1,4 +1,28 @@
+import imghdr
+import os
 import re
+import uuid
+from io import BytesIO
+from werkzeug.utils import secure_filename
+
+
+def find_image_path(image_bytes, app):
+    file_ext = imghdr.what(None, h=image_bytes)
+
+    # https://flask.palletsprojects.com/en/2.3.x/patterns/fileuploads/
+    if image_bytes:
+        image_file = BytesIO(image_bytes)
+        image_file.filename = "image." + file_ext
+        filename = secure_filename(image_file.filename)
+        filename = str(uuid.uuid4()) + "-_-_-_-" + filename
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(image_path, 'wb') as image:
+            image.write(image_bytes)
+    else:
+        image_path = None
+
+    return image_path
+
 
 def is_valid_password(password):
     if len(password) < 8:
