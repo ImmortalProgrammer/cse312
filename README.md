@@ -2,7 +2,7 @@
 Link to Website: https://shlomocohen.info/
 
 
-Dark Theme Toggle Feature
+# Dark Theme Toggle Feature
 The app includes a dark theme toggle feature that allows users to switch between light and dark themes. The toggle button is located on the top right of the navbar on the page after logging in, next to the username and profile picture icon.
 
 - Usage
@@ -18,12 +18,12 @@ The app includes a dark theme toggle feature that allows users to switch between
   To ensure the functionality and reliability of the dark theme toggle feature, follow these testing procedures:
 
   1) Toggle Functionality Test:
-    - Register on our app and Log in to the application.
-    - Upon logging in, you will be navigated to the Chat-Forum. 
-    - Locate the dark theme toggle button on the navbar, in the top right. 
-    - Click the button to switch between light and dark themes.
-    - Verify that the page's theme changes accordingly.
-    - Log out of the app.
+      - Register on our app and Log in to the application.
+      - Upon logging in, you will be navigated to the Chat-Forum. 
+      - Locate the dark theme toggle button on the navbar, in the top right. 
+      - Click the button to switch between light and dark themes.
+      - Verify that the page's theme changes accordingly.
+      - Log out of the app.
   2) Persistence Test:
-    - Log back in using the same credentials used in Test 1. 
-    - Verify that the theme remains the same as the last selected preference.
+      - Log back in using the same credentials used in Test 1. 
+      - Verify that the theme remains the same as the last selected preference.
