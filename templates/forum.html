@@ -351,7 +351,7 @@
 
 
 
-        const darkThemeToggle = document.getElementById("darkThemeToggle");
+         const darkThemeToggle = document.getElementById("darkThemeToggle");
 
         darkThemeToggle.addEventListener("change", function() {
             if (this.checked) {
@@ -363,10 +363,6 @@
         document.addEventListener("DOMContentLoaded", function() {
             const theme = "{{ theme }}"; // Retrieve user's theme preference
 
-        updateForum();
-        setInterval(updateForum, 1000);
-
-    </script>
             if (theme === "dark") {
                 document.body.classList.add("dark-theme");
                 document.getElementById("darkThemeToggle").checked = true;
@@ -387,7 +383,12 @@
                 body: JSON.stringify({ theme: theme })
             });
         });
+
+        updateForum();
+        setInterval(updateForum, 1000);
+
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    </script>
+
 </body>
 </html>
