@@ -11,9 +11,6 @@ import hashlib
 from flask_socketio import SocketIO, emit
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
-from flask_caching import Cache
-
-cache = Cache()
 
 DEPLOYMENT = False
 
