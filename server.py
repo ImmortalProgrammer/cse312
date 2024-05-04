@@ -48,7 +48,6 @@ def uploaded_file(filename):
 
 
 @app.route('/')
-@cache.cached(timeout=3600)
 def index():
     ip = request.remote_addr
     ip_check_msg = basic_dos_protection.check_ip(ip)
