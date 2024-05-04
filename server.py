@@ -20,8 +20,6 @@ DEPLOYMENT = False
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
-app.config['CACHE_TYPE'] = 'simple'
-cache.init_app(app)
 socket = SocketIO(app, max_http_buffer_size=32 * 1024 * 1024)
 # https://apscheduler.readthedocs.io/en/3.x/
 
@@ -59,9 +57,8 @@ def index():
     if user_token:
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
         if user:
-            theme = user.get('theme', 'light')
             xsrf_token = user['xsrf_token']
-            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username'), theme=theme), 302
+            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username')), 302
     return render_template('login.html')
 
 
@@ -170,18 +167,10 @@ def handle_forum_update_request():
 
         if user:
             username = user['username']
-
-            cached_posts = cache.get('forum_posts')
-
-            if cached_posts is None:
-                post_history = list(post_collection.find({}, {'_id': 0}))
-                scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
-                total_posts = scheduled_posts_data + post_history
-                total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min), reverse=True)
-                cache.set('forum_posts', total_posts)
-            else:
-                total_posts = cached_posts
-
+            post_history = list(post_collection.find({}, {'_id': 0}))
+            scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
+            total_posts = scheduled_posts_data + post_history
+            total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min), reverse=True)
             for post in total_posts:
                 if post.get("image_path"):
                     post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
@@ -202,6 +191,7 @@ def handle_forum_update_request():
             emit("update_forum", total_posts)
         else:
             return "Forbidden", 403
+
 
 @socket.on("post_data")
 def handle_post_request(data):
@@ -240,8 +230,6 @@ def handle_post_request(data):
             'created_when': datetime.now()
         }
         post_collection.insert_one(myPost)
-        if cache.get('forum_posts') is not None:
-            cache.delete('forum_posts')
 
         handle_forum_update_request()
 
@@ -269,9 +257,6 @@ def like_post(data):
     new_like_count = post.get('likes', 0) + 1
     post_collection.update_one({'id': post_id},
                                {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
-
-    if cache.get('forum_posts') is not None:
-        cache.delete('forum_posts')
 
     socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
 
@@ -317,9 +302,6 @@ def process_post_data(data, user_token, gen_id, scheduled_post):
         if scheduled_post:
             scheduled_posts.delete_one({'id': gen_id})
 
-    if cache.get('forum_posts') is not None:
-        cache.delete('forum_posts')
-
 
 def schedule_post_data(data, user_token, gen_id):
     process_post_data(data, user_token=user_token, gen_id=gen_id, scheduled_post=False)
@@ -354,6 +336,7 @@ def schedule_post(data):
         gen_id = str(uuid.uuid4())
         user_token = request.cookies.get('user_token', '').encode()
         hashedToken = hashlib.sha256(user_token).hexdigest()
+        user = user_collection.find_one({"authentication_token": hashedToken})
         try:
             scheduler.add_job(schedule_post_data, "date", run_date=schedule_time,
                               args=[post_data, user_token, gen_id])
@@ -361,17 +344,6 @@ def schedule_post(data):
         except Exception as e:
             pass
 
-@app.route('/set_theme', methods=['POST'])
-def set_theme():
-    theme = request.json.get('theme')
-    user_token = request.cookies.get('user_token')
-    if user_token:
-        user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
-        if user:
-            user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()},
-                                       {"$set": {"theme": theme}})
-            return jsonify({'message': 'Theme updated successfully'}), 200
-    return jsonify({'error': 'Unauthorized'}), 401
 
 if __name__ == "__main__":
     socket.run(app, host='0.0.0.0', port=8080)
