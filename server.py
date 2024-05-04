@@ -46,18 +46,16 @@ def uploaded_file(filename):
 def index():
     ip = request.remote_addr
     ip_check_msg = basic_dos_protection.check_ip(ip)
-
     if ip_check_msg:
         return ip_check_msg
-
     user_token = request.cookies.get('user_token')
     if user_token:
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
         if user:
+            theme = user.get('theme', 'light')
             xsrf_token = user['xsrf_token']
-            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username')), 302
+            return render_template('forum.html', xsrf=xsrf_token, username=user.get('username'), theme=theme), 302
     return render_template('login.html')
-
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -340,6 +338,18 @@ def schedule_post(data):
             show_user_scheduled_posts_before_posting(post_data, gen_id)
         except Exception as e:
             pass
+
+@app.route('/set_theme', methods=['POST'])
+def set_theme():
+    theme = request.json.get('theme')
+    user_token = request.cookies.get('user_token')
+    if user_token:
+        user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
+        if user:
+            user_collection.update_one({"authentication_token": hashlib.sha256(user_token.encode()).hexdigest()},
+                                       {"$set": {"theme": theme}})
+            return jsonify({'message': 'Theme updated successfully'}), 200
+    return jsonify({'error': 'Unauthorized'}), 401
 
 
 if __name__ == "__main__":
