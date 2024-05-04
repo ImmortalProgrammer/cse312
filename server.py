@@ -11,20 +11,25 @@ import hashlib
 from flask_socketio import SocketIO, emit
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
+from flask_caching import Cache
+
+cache = Cache()
 
 DEPLOYMENT = False
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = "/app/uploads"
-socket = SocketIO(app)
+app.config['CACHE_TYPE'] = 'simple'
+cache.init_app(app)
+socket = SocketIO(app, max_http_buffer_size=32 * 1024 * 1024)
 # https://apscheduler.readthedocs.io/en/3.x/
 
 scheduler = BackgroundScheduler()
 scheduler.start()
 
 mongo_client = MongoClient("mongo")
-db = mongo_client["cse312"]
+db = mongo_client["forum_posts_database_system"]
 user_collection = db['users']
 post_collection = db['posts']
 chat_id = db['count']
@@ -43,6 +48,7 @@ def uploaded_file(filename):
 
 
 @app.route('/')
+@cache.cached(timeout=3600)
 def index():
     ip = request.remote_addr
     ip_check_msg = basic_dos_protection.check_ip(ip)
@@ -161,22 +167,41 @@ def handle_forum_update_request():
         userToken = request.cookies['user_token'].encode()
         hashedToken = hashlib.sha256(userToken).hexdigest()
         user = user_collection.find_one({"authentication_token": hashedToken})
+
         if user:
             username = user['username']
-            post_history = list(post_collection.find({}, {'_id': 0}))
-            scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
-            total_posts = scheduled_posts_data + post_history
-            total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min))
+
+            cached_posts = cache.get('forum_posts')
+
+            if cached_posts is None:
+                post_history = list(post_collection.find({}, {'_id': 0}))
+                scheduled_posts_data = list(scheduled_posts.find({'username': username}, {'_id': 0}))
+                total_posts = scheduled_posts_data + post_history
+                total_posts = sorted(total_posts, key=lambda x: x.get('created_when', datetime.min), reverse=True)
+                cache.set('forum_posts', total_posts)
+            else:
+                total_posts = cached_posts
 
             for post in total_posts:
-                post.pop('created_when', None)
                 if post.get("image_path"):
                     post["image_path"] = url_for("uploaded_file", filename=post["image_path"][len("/app/uploads/"):])
+
+                if post.get("scheduled_when"):
+                    check_whether_scheduled = post.get("scheduled_post")
+                    if check_whether_scheduled:
+                        est_timezone = timezone('US/Eastern')
+                        present_time = datetime.now(est_timezone)
+                        scheduled_time = est_timezone.localize(
+                            datetime.strptime(post["scheduled_when"], "%Y-%m-%dT%H:%M"))
+                        time_remaining = scheduled_time - present_time
+                        post[
+                            "time_remaining"] = time_remaining.total_seconds() if time_remaining.total_seconds() > 0 else 0
+                    post.pop("scheduled_when", None)
+                post.pop("created_when", None)
 
             emit("update_forum", total_posts)
         else:
             return "Forbidden", 403
-
 
 @socket.on("post_data")
 def handle_post_request(data):
@@ -184,7 +209,6 @@ def handle_post_request(data):
     title = data["title"]
     description = data["description"]
     image_bytes = data["image"]
-
     image_path = misc.find_image_path(image_bytes, app)
 
     if chat_id.count_documents({}) == 0:
@@ -216,6 +240,8 @@ def handle_post_request(data):
             'created_when': datetime.now()
         }
         post_collection.insert_one(myPost)
+        if cache.get('forum_posts') is not None:
+            cache.delete('forum_posts')
 
         handle_forum_update_request()
 
@@ -243,6 +269,9 @@ def like_post(data):
     new_like_count = post.get('likes', 0) + 1
     post_collection.update_one({'id': post_id},
                                {'$set': {'likes': new_like_count}, '$push': {'liked_by': user["username"]}})
+
+    if cache.get('forum_posts') is not None:
+        cache.delete('forum_posts')
 
     socket.emit('update_like_count', {'postId': post_id, 'likeCount': new_like_count})
 
@@ -276,20 +305,24 @@ def process_post_data(data, user_token, gen_id, scheduled_post):
         'likes': 0,
         'image_path': image_path,
         'scheduled_post': scheduled_post,
-        'created_when': datetime.now()
+        'created_when': datetime.now(),
+        'scheduled_when': data["scheduled_when"]
     }
 
     if scheduled_post:
         scheduled_posts.insert_one(myPost)
     else:
         post_collection.insert_one(myPost)
-        scheduled_posts.delete_one({'id': gen_id})
+        scheduled_post = scheduled_posts.find_one({'id': gen_id})
+        if scheduled_post:
+            scheduled_posts.delete_one({'id': gen_id})
 
-    return None
+    if cache.get('forum_posts') is not None:
+        cache.delete('forum_posts')
 
 
 def schedule_post_data(data, user_token, gen_id):
-    return process_post_data(data, user_token=user_token, gen_id=gen_id, scheduled_post=False)
+    process_post_data(data, user_token=user_token, gen_id=gen_id, scheduled_post=False)
 
 
 def show_user_scheduled_posts_before_posting(data, gen_id):
@@ -301,6 +334,7 @@ def show_user_scheduled_posts_before_posting(data, gen_id):
 @socket.on("schedule_post")
 def schedule_post(data):
     schedule_time = data["scheduleTime"]
+
     schedule_time = datetime.strptime(schedule_time, "%Y-%m-%dT%H:%M")
     EST_timezone = timezone('US/Eastern')
     schedule_time = EST_timezone.localize(schedule_time)
@@ -310,16 +344,22 @@ def schedule_post(data):
         emit("ERROR_IN_POSTING_SCHEDULED_MSG_TIMING_ISSUE")
         return
 
+    if (schedule_time - current_time).total_seconds() > 72 * 3600:
+        emit("72_HOUR_RULE")
+        return
+
     post_data = data["formData"]
+    post_data["scheduled_when"] = data["scheduleTime"]
     if 'user_token' in request.cookies:
         gen_id = str(uuid.uuid4())
         user_token = request.cookies.get('user_token', '').encode()
+        hashedToken = hashlib.sha256(user_token).hexdigest()
         try:
-            scheduler.add_job(schedule_post_data, "date", run_date=schedule_time, args=[post_data, user_token, gen_id])
+            scheduler.add_job(schedule_post_data, "date", run_date=schedule_time,
+                              args=[post_data, user_token, gen_id])
             show_user_scheduled_posts_before_posting(post_data, gen_id)
         except Exception as e:
             pass
-
 
 
 if __name__ == "__main__":
