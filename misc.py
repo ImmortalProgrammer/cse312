@@ -1,9 +1,23 @@
 import imghdr
 import os
 import re
+import time
 import uuid
 from io import BytesIO
 from werkzeug.utils import secure_filename
+
+BLOCKING_LENGTH = 30
+
+
+def ip_status(blocked_ips, ip_addr):
+    if ip_addr in blocked_ips:
+        if time.time() - blocked_ips[ip_addr] > BLOCKING_LENGTH:
+            del blocked_ips[ip_addr]
+            return False
+        else:
+            return True
+
+    return False
 
 
 def find_image_path(image_bytes, app):
