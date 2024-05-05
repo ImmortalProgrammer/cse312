@@ -1,27 +1,20 @@
 import datetime
+import time
 import uuid
 from pytz import timezone
 from flask import Flask, render_template, request, make_response, redirect, url_for, jsonify, send_from_directory
 from pymongo import MongoClient
 import bcrypt
-import basic_dos_protection
 import misc
 import secrets
 import hashlib
 from flask_socketio import SocketIO, emit
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 DEPLOYMENT = False
-
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
-app.config['UPLOAD_FOLDER'] = "/app/uploads"
-socket = SocketIO(app, max_http_buffer_size=32 * 1024 * 1024)
-# https://apscheduler.readthedocs.io/en/3.x/
-
-scheduler = BackgroundScheduler()
-scheduler.start()
 
 mongo_client = MongoClient("mongo")
 db = mongo_client["forum_posts_database_system"]
@@ -30,6 +23,36 @@ post_collection = db['posts']
 chat_id = db['count']
 scheduled_posts = db["scheduled_posts"]
 
+blocked_ips = {}
+
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
+app.config['UPLOAD_FOLDER'] = "/app/uploads"
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["50 per 10 seconds"],
+    storage_uri="memory://",
+)
+
+socket = SocketIO(app, max_http_buffer_size=32 * 1024 * 1024)
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+
+@app.errorhandler(429)
+def handle_error(e):
+    ip = request.remote_addr
+
+    if ip not in blocked_ips:
+        blocked_ips[ip] = time.time()
+        return "429 ERROR! Please stop spamming our website with requests :(", 429
+
+    ip_check = misc.ip_status(blocked_ips, ip)
+
+    if ip_check:
+        return "429 ERROR! Please stop spamming our website with requests :(", 429
 
 @app.after_request
 def header(response):
@@ -45,9 +68,11 @@ def uploaded_file(filename):
 @app.route('/')
 def index():
     ip = request.remote_addr
-    ip_check_msg = basic_dos_protection.check_ip(ip)
-    if ip_check_msg:
-        return ip_check_msg
+    ip_check = misc.ip_status(blocked_ips, ip)
+
+    if ip_check:
+        return "429 ERROR! Please stop spamming our website with requests :(", 429
+
     user_token = request.cookies.get('user_token')
     if user_token:
         user = user_collection.find_one({'authentication_token': hashlib.sha256(user_token.encode()).hexdigest()})
@@ -57,13 +82,15 @@ def index():
             return render_template('forum.html', xsrf=xsrf_token, username=user.get('username'), theme=theme), 302
     return render_template('login.html')
 
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     ip = request.remote_addr
-    ip_check_msg = basic_dos_protection.check_ip(ip)
+    ip_check = misc.ip_status(blocked_ips, ip)
 
-    if ip_check_msg:
-        return ip_check_msg
+    if ip_check:
+        return "429 ERROR! Please stop spamming our website with requests :(", 429
+
     user_token = request.cookies.get('user_token')
     if user_token and user_token != '':
         return redirect(url_for('index'))
@@ -101,12 +128,6 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    ip = request.remote_addr
-    ip_check_msg = basic_dos_protection.check_ip(ip)
-
-    if ip_check_msg:
-        return ip_check_msg
-
     user_token = request.cookies.get('user_token')
     if user_token:
         return redirect(url_for('index'))
@@ -339,6 +360,8 @@ def schedule_post(data):
         except Exception as e:
             pass
 
+
+@limiter.exempt
 @app.route('/set_theme', methods=['POST'])
 def set_theme():
     theme = request.json.get('theme')
@@ -351,6 +374,8 @@ def set_theme():
             return jsonify({'message': 'Theme updated successfully'}), 200
     return jsonify({'error': 'Unauthorized'}), 401
 
+
+limiter.init_app(app)
 
 if __name__ == "__main__":
     socket.run(app, host='0.0.0.0', port=8080)
