@@ -1,5 +1,5 @@
 # CSE 312
-Link to Website: https://shlomocohen.info/
+Link to Website: https://cse312.me/
 
 
 # Dark Theme Toggle Feature
